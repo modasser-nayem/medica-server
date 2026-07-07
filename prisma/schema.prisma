@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== OTP ====================
+enum OtpType {
+  ACCOUNT_VERIFY
+  FORGOT_PASSWORD
+}
+
+model Otp {
+  id         String    @id @default(uuid())
+  email      String
+  code       Int
+  type       OtpType
+  isUsed     Boolean   @default(false)
+  isVerified Boolean   @default(false)
+  verifiedAt DateTime?
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  updateAt   DateTime  @updatedAt
+
+  @@index([email])
+  @@map("otps")
+}
+
+// ============================= User model =========================
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum UserTier {
+  FREE
+  PREMIUM
+}
+
+enum UserStatus {
+  UNBLOCK
+  BLOCKED
+}
+
+model User {
+  id              String    @id @default(uuid())
+  name            String
+  email           String       @unique
+  password        String
+  avatar           String?
+  role            UserRole     @default(USER)
+  status          UserStatus   @default(UNBLOCK)
+  tier            UserTier     @default(FREE)
+  provider        AuthProvider @default(EMAIL)
+  isEmailVerified Boolean      @default(false)
+
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("users")
+}
