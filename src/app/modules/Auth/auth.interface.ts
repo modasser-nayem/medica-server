@@ -1,14 +1,13 @@
 import { z } from "zod";
 import { authSchemaValidation } from "./auth.validation";
-import { AuthProvider, UserRole, UserStatus, UserTier } from "@prisma/client";
 
 export type TUserRegistration = z.infer<
   typeof authSchemaValidation.userRegistration
->;
+>["body"];
 
 export type TChangePassword = z.infer<
   typeof authSchemaValidation.changePassword
->;
+>["body"];
 
 export interface TUserLogin {
   email: string;
@@ -23,13 +22,16 @@ export type TForgotPassword = {
   email: string;
 };
 
-export type TResetPassword = z.infer<typeof authSchemaValidation.resetPassword>;
+export type TResetPassword = z.infer<
+  typeof authSchemaValidation.resetPassword
+>["body"];
 
-export type TVerifyOtp = z.infer<typeof authSchemaValidation.verifyOtp>;
+export type TVerifyOtp = z.infer<typeof authSchemaValidation.verifyOtp>["body"];
 
 export interface IUserFilters {
-  role?: UserRole;
-  status?: UserStatus;
+  role?: string;
+  isActive?: boolean;
+  isVerified?: boolean;
   search?: string;
   page?: number;
   limit?: number;
@@ -40,11 +42,7 @@ export interface IUserFilters {
 export type TAuthUser = {
   id: string;
   name: string;
-  email: string;
-  role: UserRole;
-  avatar: string | null;
-  status: UserStatus;
-  tier: UserTier;
-  provider: AuthProvider;
-  isEmailVerified: boolean;
+  role: string;
+  profileId?: string;
+  profileImage: string | null;
 };

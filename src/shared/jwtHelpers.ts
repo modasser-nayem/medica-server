@@ -5,6 +5,7 @@ import { UserRole } from "@prisma/client";
 export type TSignTokenPayload = {
   userId: string;
   role: UserRole;
+  profileId?: string;
 };
 
 const signAccessToken = (payload: TSignTokenPayload) => {

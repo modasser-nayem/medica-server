@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== OTP ====================
+// ==================== OTP MODELS ====================
 enum OtpType {
   ACCOUNT_VERIFY
   FORGOT_PASSWORD
@@ -30,42 +30,409 @@ model Otp {
   @@map("otps")
 }
 
-// ============================= User model =========================
-enum AuthProvider {
-  EMAIL
-  GOOGLE
-}
 
+// =================== CORE USER MODELS ===================
 enum UserRole {
+  PATIENT
+  DOCTOR
   ADMIN
-  USER
 }
 
-enum UserTier {
-  FREE
-  PREMIUM
-}
-
-enum UserStatus {
-  UNBLOCK
-  BLOCKED
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
 }
 
 model User {
-  id              String    @id @default(uuid())
-  name            String
-  email           String       @unique
-  password        String
-  avatar           String?
-  role            UserRole     @default(USER)
-  status          UserStatus   @default(UNBLOCK)
-  tier            UserTier     @default(FREE)
-  provider        AuthProvider @default(EMAIL)
-  isEmailVerified Boolean      @default(false)
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  password     String
+  phone        String?
+  dateOfBirth  DateTime?
+  gender       Gender?
+  address      String?
+  profileImage String?
+  role         UserRole  @default(PATIENT)
+  isActive     Boolean   @default(true)
+  isDeleted    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  // Profiles
+  doctorProfile  Doctor?
+  patientProfile Patient?
 
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  // Notifications & audit
+  notifications Notification[]
+  auditLogs     AuditLog[]
 
+  // Chat
+  messages ChatMessage[] // sender
+
+  @@index([role])
   @@map("users")
+}
+
+model Doctor {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  departmentId  String?
+  specialties   String?
+  qualification String?
+  experience    Int? // total years
+  bio           String?
+  timezone      String? // e.g., "Asia/Dhaka" (useful when computing slots)
+  consultationFee Decimal @db.Decimal(10, 2) @default(0.00)
+  stripeConnectAccountId String? // Stripe Connect account for direct payouts
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department         Department?         @relation(fields: [departmentId], references: [id])
+  schedules          Schedule[]
+  scheduleExceptions ScheduleException[]
+  appointments       Appointment[]
+  reviews            Review[]
+  payouts            DoctorPayout[]
+
+  @@map("doctors")
+}
+
+model Patient {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  bloodGroup       String?
+  emergencyContact String?
+  medicalHistory   String?
+  allergies        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  reviews      Review[]
+
+  @@map("patients")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  icon        String?
+  description String?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  doctors Doctor[]
+
+  @@map("departments")
+}
+
+// =================== SCHEDULING ===================
+model Schedule {
+  id                  String   @id @default(uuid())
+  doctorId            String
+  dayOfWeek           Int
+  startTime           String
+  endTime             String
+  slotDurationMinutes Int      @default(60)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, dayOfWeek])
+  @@map("schedules")
+}
+
+model ScheduleException {
+  id           String   @id @default(uuid())
+  doctorId     String
+  date         DateTime // date-only semantics; store at UTC midnight
+  // If closed is true, doctor is unavailable for the whole date
+  closed       Boolean  @default(false)
+  // Optional custom hours for that specific date (override Schedule)
+  startTime    String?
+  endTime      String?
+  // Optional pre-blocked slots on that date (e.g., ["09:30", "10:00"])
+  blockedSlots String[] @default([])
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, date])
+  @@map("schedule_exceptions")
+}
+
+
+// =================== BOOKING / CONSULTATION ===================
+ enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+
+enum ConsultationStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Appointment {
+  id           String            @id @default(uuid())
+  patientId    String
+  doctorId     String
+  startsAt     DateTime // exact start datetime (UTC)
+  endsAt       DateTime // exact end datetime (UTC)
+  currency     String            @default("BDT")
+  price        Decimal           @db.Decimal(10, 2)
+  status       AppointmentStatus @default(PENDING)
+  cancelReason String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor       Doctor        @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  consultation Consultation?
+  payments      Payment[]
+  payout        DoctorPayout?
+
+  @@unique([doctorId, startsAt]) // prevent double booking same start
+  @@index([patientId, startsAt])
+  @@index([doctorId, startsAt])
+  @@map("appointments")
+}
+
+model Consultation {
+  id            String             @id @default(uuid())
+  appointmentId String             @unique
+  status        ConsultationStatus @default(SCHEDULED)
+  notes         String?
+  roomId        String? // for video/voice sessions
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  appointment   Appointment    @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  prescriptions Prescription[]
+  calls         Call[]
+
+  @@map("consultations")
+}
+
+model Prescription {
+  id             String    @id @default(uuid())
+  consultationId String
+  medicines      Json? // [{ name, dose, frequency, duration, notes }]
+  instructions   String
+  diagnosis      String?
+  nextVisit      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@map("prescriptions")
+}
+
+
+// =================== PAYMENTS ===================
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  appointmentId String
+  amount        Int
+  currency      String        @default("BDT")
+  externalId    String        @unique
+  paymentIntentId String?
+  method        String        @default("card")
+  status        PaymentStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  payout      DoctorPayout?
+
+  @@map("payments")
+}
+
+// =================== PAYOUTS ===================
+enum PayoutStatus {
+  PENDING     // payment received, consultation not yet complete
+  ELIGIBLE    // consultation completed, ready to release to doctor
+  PROCESSING  // Stripe Transfer initiated
+  PAID        // transfer confirmed
+  VOIDED      // appointment cancelled/refunded — payout will never happen
+}
+
+model DoctorPayout {
+  id               String       @id @default(uuid())
+  appointmentId    String       @unique
+  doctorId         String
+  paymentId        String       @unique
+  amount           Decimal      @db.Decimal(10, 2)
+  currency         String       @default("BDT")
+  status           PayoutStatus @default(PENDING)
+  stripeTransferId String?      // populated after Stripe Transfer succeeds
+  eligibleAt       DateTime?    // timestamp when consultation completed
+  paidAt           DateTime?    // timestamp when transfer was confirmed
+  noShowAt         DateTime?    // set if doctor missed the slot (triggers auto-refund)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctor      Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  payment     Payment     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, status])
+  @@map("doctor_payouts")
+}
+
+// =================== COMMUNICATION ===================
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+model ChatThread {
+  id        String   @id @default(uuid())
+  patientId String
+  doctorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+
+  @@unique([patientId, doctorId])
+  @@index([patientId, doctorId])
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id             String      @id @default(uuid())
+  threadId       String
+  senderId       String
+  consultationId String?
+  type           MessageType @default(TEXT)
+  text           String?
+  attachment     String? // URL
+  isRead         Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("chat_messages")
+}
+
+// Single unified call model tied to appointment
+enum CallStatus {
+  INITIATED
+  RINGING
+  ANSWERED
+  REJECTED
+  ENDED
+  MISSED
+}
+
+model Call {
+  id             String     @id @default(uuid())
+  consultationId String
+  type           CallType
+  status         CallStatus @default(INITIATED)
+  roomId         String?
+  recordingUrl   String?
+  notes          String?
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@index([consultationId, type])
+  @@map("calls")
+}
+
+// =================== REVIEWS / NOTIFS / AUDIT ===================
+
+model Review {
+  id        String   @id @default(uuid())
+  patientId String
+  doctorId  String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor  Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, doctorId])
+  @@map("reviews")
+}
+
+// =================== NOTIFICATION ===================
+enum NotificationType {
+  APPOINTMENT
+  PRESCRIPTION
+  PAYMENT
+  SYSTEM
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  userId    String
+  type      NotificationType?
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean           @default(false)
+  createdAt DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("audit_logs")
 }
