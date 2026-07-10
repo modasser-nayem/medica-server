@@ -46,7 +46,10 @@ const getDepartmentById = async (id: string) => {
   return result;
 };
 
-const updateDepartment = async (payload: TUpdateDepartment) => {
+const updateDepartment = async (payload: {
+  id: string;
+  data: TUpdateDepartment;
+}) => {
   const exist = await prisma.department.findUnique({
     where: { id: payload.id },
   });

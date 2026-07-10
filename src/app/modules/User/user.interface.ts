@@ -5,15 +5,15 @@ import { PaginationQuery } from "../../../utils/pagination";
 
 export type TUpdateUserProfile = z.infer<
   typeof userSchemaValidation.updateUserProfile
->;
+>["body"];
 
 export type TUpdatePatientProfile = z.infer<
   typeof userSchemaValidation.updatePatientProfile
->;
+>["body"];
 
 export type TUpdateDoctorProfile = z.infer<
   typeof userSchemaValidation.updateDoctorProfile
->;
+>["body"];
 
 export interface TGetUsersFilter extends PaginationQuery {
   search?: string;
