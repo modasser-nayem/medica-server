@@ -6,6 +6,8 @@ import { doctorRoutes } from "../modules/Doctor/doctor.routes";
 import { appointmentRoutes } from "../modules/Appointment/appointment.routes";
 import { departmentRoutes } from "../modules/Department/department.routes";
 import { scheduleRoutes } from "../modules/Schedule/schedule.routes";
+import { chatRoutes } from "../modules/Chat/chat.routes";
+import { consultationRoutes } from "../modules/Consultation/consultation.routes";
 
 const routers = Router();
 
@@ -37,6 +39,14 @@ const moduleRoutes: { path: string; route: Router }[] = [
   {
     path: "/payments",
     route: paymentRoutes,
+  },
+  {
+    path: "/chats",
+    route: chatRoutes,
+  },
+  {
+    path: "/consultations",
+    route: consultationRoutes,
   },
 ];
 

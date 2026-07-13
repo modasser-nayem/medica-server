@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Server as SocketIOServer } from "socket.io";
 import { CustomSocket } from "../socket.types";
 import { socketRegistry } from "../socket.registry";
 import logger from "../../utils/logger";
+import { chatService } from "../../app/modules/Chat/chat.service";
 
 export const registerChatHandlers = (
   io: SocketIOServer,
@@ -46,6 +48,7 @@ export const registerChatHandlers = (
   // Mark messages in a thread as seen
   socket.on("seen_messages", async ({ threadId }: { threadId: string }) => {
     try {
+      await chatService.markAsRead(threadId, userId);
       logger.info(
         `Socket ${socket.id} marked messages as read in thread: ${threadId} for user ${userId}`,
       );
@@ -64,7 +67,7 @@ export const registerChatHandlers = (
       attachmentType?: string;
     }) => {
       try {
-        const message = {
+        const message = await chatService.sendMessage({
           senderId: userId,
           senderRole: socket.data.role,
           senderProfileId: socket.data.profileId!,
@@ -72,10 +75,9 @@ export const registerChatHandlers = (
           text: payload.text,
           attachment: payload.attachment,
           attachmentType: payload.attachmentType,
-        };
+        });
 
         socket.emit("message_sent", message);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
         socket.emit("message_error", {
           error: err?.message || "Failed to send message",
