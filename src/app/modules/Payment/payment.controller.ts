@@ -2,16 +2,18 @@ import { asyncHandler } from "../../../shared/catchAsync";
 import sendResponse from "../../../shared/sendResponse";
 import { paymentService } from "./payment.service";
 
-// ── Stripe Webhook ────────────────────────────────────────────────────────────
+// Stripe webhook handler
 const handleStripeWebhook = asyncHandler(async (req, res) => {
   const sig = req.headers["stripe-signature"]!;
   await paymentService.handleStripeWebhook({ sig, body: req.body });
   res.json({ received: true });
 });
 
-// ── Payment Success Redirect ──────────────────────────────────────────────────
+// Success redirect callback handler
 const successPaymentHandler = asyncHandler(async (req, res) => {
-  const result = await paymentService.successPaymentHandler(req.params.sessionId);
+  const result = await paymentService.successPaymentHandler(
+    req.params.sessionId,
+  );
 
   sendResponse(res, {
     statusCode: 200,
@@ -21,8 +23,9 @@ const successPaymentHandler = asyncHandler(async (req, res) => {
   });
 });
 
-// ── List Payments ─────────────────────────────────────────────────────────────
+// Get payments list
 const getPayments = asyncHandler(async (req, res) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filters: any = { ...req.query };
 
   if (req.user.role === "PATIENT") {
@@ -42,7 +45,7 @@ const getPayments = asyncHandler(async (req, res) => {
   });
 });
 
-// ── Retry Payment Process ─────────────────────────────────────────────────────
+// Manual status retry check
 const retryPaymentProcess = asyncHandler(async (req, res) => {
   const result = await paymentService.retryPaymentProcess({
     sessionId: req.body.sessionId,
@@ -56,7 +59,7 @@ const retryPaymentProcess = asyncHandler(async (req, res) => {
   });
 });
 
-// ── Re-initiate Payment for Failed Appointment ───────────────────────────────
+// Create new checkout session for retry
 const rePayment = asyncHandler(async (req, res) => {
   const result = await paymentService.repayment({
     appointmentId: req.body.appointmentId,
@@ -70,9 +73,11 @@ const rePayment = asyncHandler(async (req, res) => {
   });
 });
 
-// ── Doctor No-Show: Admin Triggers Full Refund ────────────────────────────────
+// Process doctor no-show refund
 const handleDoctorNoShow = asyncHandler(async (req, res) => {
-  const result = await paymentService.handleDoctorNoShow(req.params.appointmentId);
+  const result = await paymentService.handleDoctorNoShow(
+    req.params.appointmentId,
+  );
 
   sendResponse(res, {
     statusCode: 200,
@@ -82,7 +87,7 @@ const handleDoctorNoShow = asyncHandler(async (req, res) => {
   });
 });
 
-// ── List Doctor Payouts ───────────────────────────────────────────────────────
+// List payouts for doctor or admin
 const getPayouts = asyncHandler(async (req, res) => {
   const { status, page, limit } = req.query as Record<string, string>;
   let doctorId = req.query.doctorId as string | undefined;
@@ -107,7 +112,7 @@ const getPayouts = asyncHandler(async (req, res) => {
   });
 });
 
-// ── Admin: Mark Payout as Paid ────────────────────────────────────────────────
+// Admin marks a payout as paid manually
 const markPayoutAsPaid = asyncHandler(async (req, res) => {
   const result = await paymentService.markPayoutAsPaid(req.params.payoutId);
 
@@ -119,9 +124,7 @@ const markPayoutAsPaid = asyncHandler(async (req, res) => {
   });
 });
 
-// ── Stripe Connect ──────────────────────────────────────────────────────────────────────
-
-// GET /payments/connect/status — check if this doctor already has a Connect account
+// Check if doctor connect account exists
 const getStripeConnectStatus = asyncHandler(async (req, res) => {
   const result = await paymentService.getStripeConnectStatus(req.user.userId);
 
@@ -133,14 +136,21 @@ const getStripeConnectStatus = asyncHandler(async (req, res) => {
   });
 });
 
-// POST /payments/connect/onboard — start or resume Stripe Connect onboarding
+// Setup onboarding link
 const createStripeConnectOnboarding = asyncHandler(async (req, res) => {
-  const { returnUrl, refreshUrl } = req.body as { returnUrl: string; refreshUrl: string };
+  const { returnUrl, refreshUrl } = req.body as {
+    returnUrl: string;
+    refreshUrl: string;
+  };
 
   const result = await paymentService.createStripeConnectOnboardingLink({
     userId: req.user.userId,
-    returnUrl: returnUrl || `${process.env.FRONTEND_URL}/dashboard/doctor/payouts?connect=success`,
-    refreshUrl: refreshUrl || `${process.env.FRONTEND_URL}/dashboard/doctor/payouts?connect=refresh`,
+    returnUrl:
+      returnUrl ||
+      `${process.env.FRONTEND_URL}/dashboard/doctor/payouts?connect=success`,
+    refreshUrl:
+      refreshUrl ||
+      `${process.env.FRONTEND_URL}/dashboard/doctor/payouts?connect=refresh`,
   });
 
   sendResponse(res, {
@@ -151,7 +161,7 @@ const createStripeConnectOnboarding = asyncHandler(async (req, res) => {
   });
 });
 
-// POST /payments/payouts/:payoutId/withdraw — doctor requests withdrawal for an ELIGIBLE payout
+// Handle withdraw requests
 const withdrawPayout = asyncHandler(async (req, res) => {
   const { payoutId } = req.params;
   const result = await paymentService.withdrawPayout({
@@ -159,7 +169,7 @@ const withdrawPayout = asyncHandler(async (req, res) => {
     userId: req.user.userId,
   });
 
-  // needsConnect=true means frontend should redirect to connect flow
+  // 402 tells frontend to prompt connect flow if missing
   sendResponse(res, {
     statusCode: result.needsConnect ? 402 : 200,
     success: true,

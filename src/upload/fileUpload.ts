@@ -7,9 +7,7 @@ import { CloudinaryStorageProvider } from "./cloudinary.provider";
 import { IStorageProvider } from "./storage.interface";
 import config from "../config";
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Folder Constants
-// ─────────────────────────────────────────────────────────────────────────────
 export const UploadFolder = {
   PROFILE_IMAGES: "medica/profile-images",
   CHAT_ATTACHMENTS: "medica/chat-attachments",
@@ -19,9 +17,7 @@ export const UploadFolder = {
 
 export type TUploadFolder = (typeof UploadFolder)[keyof typeof UploadFolder];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Unified Upload Response Types
-// ─────────────────────────────────────────────────────────────────────────────
+// Response Types
 export interface UnifiedUploadResponse {
   url: string;
   key?: string;
@@ -39,9 +35,7 @@ export interface UploadOptions {
   fieldLabel?: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Allowed MIME types per upload category
-// ─────────────────────────────────────────────────────────────────────────────
+// Allowed MIME types
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const DOCUMENT_TYPES = ["application/pdf"];
 const ATTACHMENT_TYPES = [
@@ -57,9 +51,7 @@ const ATTACHMENT_TYPES = [
   "video/webm",
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// File filter factories
-// ─────────────────────────────────────────────────────────────────────────────
+// File filters
 const createFileFilter =
   (allowedTypes: string[]) =>
   (_req: Request, file: Express.Multer.File, cb: FileFilterCallback): void => {
@@ -76,34 +68,26 @@ const createFileFilter =
     }
   };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Multer instances (memory storage — files streamed directly to Cloudinary/S3)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** General-purpose multer (images only, 5 MB) — for profile pictures, avatars */
+// Multer setup
 export const uploadImageMiddleware = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: createFileFilter(IMAGE_TYPES),
 });
 
-/** Chat attachment multer (images + docs + audio/video, 20 MB) */
 export const uploadAttachmentMiddleware = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
   fileFilter: createFileFilter(ATTACHMENT_TYPES),
 });
 
-/** Document-only multer (PDF, Word, TXT — 10 MB) */
 export const uploadDocumentMiddleware = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: createFileFilter([...DOCUMENT_TYPES, "text/plain"]),
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Initialize Providers & Resolve Active Storage Provider
-// ─────────────────────────────────────────────────────────────────────────────
+// Initialize storage providers
 const s3StorageProvider = new AwsS3StorageProvider({
   region: config.aws.AWS_REGION,
   credentials: {
@@ -121,10 +105,7 @@ const s3StorageProvider = new AwsS3StorageProvider({
 
 const storageProvider: IStorageProvider = s3StorageProvider;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Unified Upload & Delete Functions
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Upload and delete handlers
 const mapToUnifiedResponse = (
   result: any,
   file:
@@ -143,11 +124,7 @@ const mapToUnifiedResponse = (
   };
 };
 
-/**
- * Upload a single file (Express request or buffer object) to the active storage provider.
- * @param file     - Express.Multer.File or similar object
- * @param options  - Upload options (folderName, bucketName, required, fieldLabel)
- */
+// Upload single file
 const uploadSingle = async (
   file: Express.Multer.File | undefined,
   options?: UploadOptions,
@@ -162,11 +139,7 @@ const uploadSingle = async (
   return mapToUnifiedResponse(result, file);
 };
 
-/**
- * Upload multiple files to the active storage provider.
- * @param files    - Array of Express.Multer.File
- * @param options  - Upload options (folderName, bucketName)
- */
+// Upload multiple files
 const uploadMultiple = async (
   files: Express.Multer.File[],
   options?: UploadOptions,
@@ -178,12 +151,7 @@ const uploadMultiple = async (
   return results.map((res, index) => mapToUnifiedResponse(res, files[index]));
 };
 
-/**
- * Upload a raw PDF buffer to the active storage provider.
- * @param pdfBuffer - Raw PDF bytes
- * @param fileName  - Destination filename
- * @param options   - Upload options (folderName, bucketName)
- */
+// Upload PDF from buffer
 const uploadPDFBuffer = async (
   pdfBuffer: Uint8Array,
   fileName: string,
@@ -202,11 +170,7 @@ const uploadPDFBuffer = async (
   return mapToUnifiedResponse(result, fileDetails);
 };
 
-/**
- * Delete a single file from the active storage provider.
- * @param fileUrlOrKey - Public URL or unique S3/Cloudinary key
- * @param options      - Options (bucketName override for S3)
- */
+// Delete single file
 const deleteSingle = async (
   fileUrlOrKey: string,
   options?: UploadOptions,
@@ -214,11 +178,7 @@ const deleteSingle = async (
   return storageProvider.deleteSingle(fileUrlOrKey, options);
 };
 
-/**
- * Delete multiple files from the active storage provider.
- * @param fileUrlsOrKeys - Array of URLs or keys
- * @param options        - Options (bucketName override for S3)
- */
+// Delete multiple files
 const deleteMultiple = async (
   fileUrlsOrKeys: string[],
   options?: UploadOptions,

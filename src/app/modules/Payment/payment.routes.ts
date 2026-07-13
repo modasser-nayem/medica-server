@@ -6,12 +6,10 @@ import { paymentSchemaValidation } from "./payment.validataion";
 
 const router = express.Router();
 
-// ── Payment flow ──────────────────────────────────────────────────────────────
-
-// POST /payments/success/:sessionId — called by frontend after checkout redirect
+// Success redirect after Stripe checkout
 router.post("/success/:sessionId", paymentController.successPaymentHandler);
 
-// POST /payments/retry — manually verify a session status (fallback)
+// Manual status check fallback
 router.post(
   "/retry",
   authorize(),
@@ -19,7 +17,7 @@ router.post(
   paymentController.retryPaymentProcess,
 );
 
-// POST /payments/repayment — create a new checkout session for a failed payment
+// Create new checkout session for failed appointment payment
 router.post(
   "/repayment",
   authorize(),
@@ -27,53 +25,45 @@ router.post(
   paymentController.rePayment,
 );
 
-// ── Admin: Payments ───────────────────────────────────────────────────────────
-
-// GET /payments — list payments (admin sees all, doctor/patient see own)
+// List payment history
 router.get("/", authorize("ADMIN", "DOCTOR", "PATIENT"), paymentController.getPayments);
 
-// ── Admin: No-Show ────────────────────────────────────────────────────────────
-
-// POST /payments/no-show/:appointmentId — doctor missed slot → full patient refund
+// Process refund if doctor didn't show up
 router.post(
   "/no-show/:appointmentId",
   authorize("ADMIN"),
   paymentController.handleDoctorNoShow,
 );
 
-// ── Payouts ───────────────────────────────────────────────────────────────────
-
-// GET /payments/payouts — list payouts (admin sees all, doctor sees own)
+// List doctor payouts
 router.get(
   "/payouts",
   authorize("ADMIN", "DOCTOR"),
   paymentController.getPayouts,
 );
 
-// PATCH /payments/payouts/:payoutId/paid — admin marks manual bank transfer as done
+// Mark manual bank transfer payout as paid
 router.patch(
   "/payouts/:payoutId/paid",
   authorize("ADMIN"),
   paymentController.markPayoutAsPaid,
 );
 
-// ── Stripe Connect (Doctor Bank Account) ──────────────────────────────────────────
-
-// GET /payments/connect/status — check if this doctor has a Stripe Connect account
+// Check Stripe Connect status for doctor
 router.get(
   "/connect/status",
   authorize("DOCTOR"),
   paymentController.getStripeConnectStatus,
 );
 
-// POST /payments/connect/onboard — generate/refresh Stripe Connect onboarding URL
+// Get Stripe Connect onboarding link
 router.post(
   "/connect/onboard",
   authorize("DOCTOR"),
   paymentController.createStripeConnectOnboarding,
 );
 
-// POST /payments/payouts/:payoutId/withdraw — doctor self-service withdrawal
+// Doctor self-service withdrawal
 router.post(
   "/payouts/:payoutId/withdraw",
   authorize("DOCTOR"),
@@ -82,5 +72,5 @@ router.post(
 
 export const paymentRoutes = router;
 
-// Stripe webhook handler (registered separately in app.ts with raw body)
+// Webhook handler used in main app.ts
 export const stripeWebhookHandler = paymentController.handleStripeWebhook;

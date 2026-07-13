@@ -6,12 +6,9 @@ import AppError from "../../../errors/AppError";
 import { paginationHelper } from "../../../utils/pagination";
 import stripe from "../../../config/stripe";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Checkout Session
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Checkout Session creation
 const createPaymentCheckoutSession = async (data: ICreatePaymentIntent) => {
-  // Stripe requires amounts in the smallest currency unit (cents / paisa)
+  // stripe expects amount in cents
   const amountInCents = Math.round(data.amount * 100);
 
   const session = await stripe.checkout.sessions.create({
@@ -32,17 +29,17 @@ const createPaymentCheckoutSession = async (data: ICreatePaymentIntent) => {
       patientId: data.metadata.patientId,
       doctorId: data.metadata.doctorId,
     },
-    // Allow 30 minutes to complete checkout
+    // expires in 30 minutes
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     success_url: `${config.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${config.FRONTEND_URL}/payment/cancel?session_id={CHECKOUT_SESSION_ID}`,
   });
 
-  // Save a PENDING payment record using the Checkout Session ID as externalId
+  // create a pending payment record
   await prisma.payment.create({
     data: {
       appointmentId: data.metadata.appointmentId,
-      amount: amountInCents, // stored in cents to match Stripe
+      amount: amountInCents,
       currency: data.currency,
       externalId: session.id,
       status: "PENDING",
@@ -53,10 +50,7 @@ const createPaymentCheckoutSession = async (data: ICreatePaymentIntent) => {
   return { checkoutUrl: session.url, sessionId: session.id };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Stripe Webhook Handler
-// ─────────────────────────────────────────────────────────────────────────────
-
 const handleStripeWebhook = async (payload: {
   sig: string | string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,7 +72,7 @@ const handleStripeWebhook = async (payload: {
   }
 
   switch (event.type) {
-    // ── Payment succeeded ────────────────────────────────────────────────────
+    // Payment succeeded
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const appointmentId = session.metadata?.appointmentId;
@@ -94,7 +88,7 @@ const handleStripeWebhook = async (payload: {
       break;
     }
 
-    // ── Session expired (user closed tab / 30 min timeout) ───────────────────
+    // Session expired
     case "checkout.session.expired": {
       const session = event.data.object as Stripe.Checkout.Session;
       await handlePaymentFailure({
@@ -104,10 +98,10 @@ const handleStripeWebhook = async (payload: {
       break;
     }
 
-    // ── Explicit payment failure (card declined, 3DS fail, etc.) ────────────
+    // Explicit payment failure
     case "payment_intent.payment_failed": {
       const intent = event.data.object as Stripe.PaymentIntent;
-      // Find our payment record via appointmentId and PENDING status (paymentIntentId is not saved yet)
+      // find pending payment record using metadata
       const appointmentId = intent.metadata?.appointmentId;
       if (appointmentId) {
         const payment = await prisma.payment.findFirst({
@@ -123,7 +117,7 @@ const handleStripeWebhook = async (payload: {
       break;
     }
 
-    // ── Stripe Transfer confirmed (doctor payout) ────────────────────────────
+    // Transfer completed
     case "transfer.created": {
       const transfer = event.data.object as Stripe.Transfer;
       const payout = await prisma.doctorPayout.findFirst({
@@ -143,10 +137,7 @@ const handleStripeWebhook = async (payload: {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Post-Payment Success (internal)
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Post-Payment Success actions
 const afterPaymentSuccess = async ({
   sessionId,
   appointmentId,
@@ -156,32 +147,30 @@ const afterPaymentSuccess = async ({
   appointmentId: string;
   paymentIntentId: string | null;
 }) => {
-  // Idempotency guard — don't process twice
+  // avoid double processing
   const existingPayment = await prisma.payment.findUnique({
     where: { externalId: sessionId },
   });
   if (!existingPayment || existingPayment.status === "COMPLETED") return;
 
-  // Mark payment as COMPLETED
   const updatedPayment = await prisma.payment.update({
     where: { externalId: sessionId },
     data: { status: "COMPLETED", paymentIntentId },
   });
 
-  // Confirm appointment
   const appointment = await prisma.appointment.update({
     where: { id: appointmentId },
     data: { status: "CONFIRMED" },
   });
 
-  // Create or restore Consultation record
+  // set up consultation
   await prisma.consultation.upsert({
     where: { appointmentId },
     update: { status: "SCHEDULED" },
     create: { appointmentId, status: "SCHEDULED" },
   });
 
-  // Create DoctorPayout in PENDING state (escrow — held until consultation)
+  // holding payout in pending state
   const existingPayout = await prisma.doctorPayout.findUnique({
     where: { appointmentId },
   });
@@ -191,7 +180,7 @@ const afterPaymentSuccess = async ({
         appointmentId,
         doctorId: appointment.doctorId,
         paymentId: updatedPayment.id,
-        amount: updatedPayment.amount / 100, // convert back from cents
+        amount: updatedPayment.amount / 100, // back to major currency unit
         currency: updatedPayment.currency,
         status: "PENDING",
       },
@@ -199,10 +188,7 @@ const afterPaymentSuccess = async ({
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Payment Failure Handler (internal)
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Payment Failure Handler
 const handlePaymentFailure = async ({
   sessionId,
   reason,
@@ -220,7 +206,7 @@ const handlePaymentFailure = async ({
     data: { status: "FAILED" },
   });
 
-  // Cancel the appointment if it's still PENDING
+  // cancel the pending appointment
   await prisma.appointment.update({
     where: { id: payment.appointmentId },
     data: {
@@ -230,16 +216,7 @@ const handlePaymentFailure = async ({
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Refund Payment
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Issue a full (or partial) Stripe refund and void the DoctorPayout.
- * @param paymentId       - our internal Payment.id
- * @param paymentIntentId - Stripe payment_intent id
- * @param amountCents     - optional: partial refund amount in cents; omit for full refund
- */
+// Refund payment and update records
 const refundPayment = async (payload: {
   paymentId: string;
   paymentIntentId: string;
@@ -259,7 +236,7 @@ const refundPayment = async (payload: {
     data: { status: "REFUNDED" },
   });
 
-  // Void the doctor payout — money is going back to patient
+  // cancel the payout
   await prisma.doctorPayout.updateMany({
     where: {
       paymentId: payload.paymentId,
@@ -271,14 +248,7 @@ const refundPayment = async (payload: {
   return { refundId: refund.id, status: refund.status ?? "unknown" };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Doctor No-Show Handler
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Called when the appointment slot has passed and no consultation was initiated.
- * Automatically issues a full refund and marks the payout as VOIDED.
- */
+// Handle cases where the doctor missed the appointment slot
 const handleDoctorNoShow = async (appointmentId: string) => {
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
@@ -293,7 +263,7 @@ const handleDoctorNoShow = async (appointmentId: string) => {
     throw new AppError(404, "Appointment not found");
   }
 
-  // Can only mark no-show if slot has ended and consultation was never started
+  // validation check for slot timing
   const now = new Date();
   if (appointment.endsAt > now) {
     throw new AppError(400, "Appointment slot has not ended yet");
@@ -313,13 +283,12 @@ const handleDoctorNoShow = async (appointmentId: string) => {
     );
   }
 
-  // Cancel appointment with no-show reason
+  // cancel everything
   await prisma.appointment.update({
     where: { id: appointmentId },
     data: { status: "CANCELLED", cancelReason: "Doctor no-show" },
   });
 
-  // Cancel consultation if it exists but was never completed
   if (appointment.consultation) {
     await prisma.consultation.update({
       where: { id: appointment.consultation.id },
@@ -327,7 +296,7 @@ const handleDoctorNoShow = async (appointmentId: string) => {
     });
   }
 
-  // Issue full refund for each completed payment
+  // refund all payments
   const refundResults: { refundId: string; status: string }[] = [];
   for (const payment of appointment.payments) {
     if (!payment.paymentIntentId) continue;
@@ -339,7 +308,7 @@ const handleDoctorNoShow = async (appointmentId: string) => {
     refundResults.push(refund);
   }
 
-  // Mark payout as voided with noShowAt timestamp
+  // void the payout
   if (appointment.payout) {
     await prisma.doctorPayout.update({
       where: { id: appointment.payout.id },
@@ -354,30 +323,23 @@ const handleDoctorNoShow = async (appointmentId: string) => {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Release Payout to Doctor (called from consultation.service after endCall)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Marks DoctorPayout as ELIGIBLE and initiates a Stripe Transfer
- * if the doctor has a stripeConnectAccountId configured.
- */
+// Release payout to doctor once call ends
 const releasePayoutToDoctor = async (appointmentId: string) => {
   const payout = await prisma.doctorPayout.findUnique({
     where: { appointmentId },
     include: { doctor: true },
   });
 
-  if (!payout) return; // no payout record = no payment was ever made
-  if (payout.status !== "PENDING") return; // already processed
+  if (!payout) return;
+  if (payout.status !== "PENDING") return;
 
   const now = new Date();
 
-  // If doctor has Stripe Connect, initiate transfer immediately
+  // transfer immediately if stripe connect is set up
   if (payout.doctor.stripeConnectAccountId) {
     try {
       const transfer = await stripe.transfers.create({
-        amount: Math.round(Number(payout.amount) * 100), // back to cents
+        amount: Math.round(Number(payout.amount) * 100),
         currency: payout.currency.toLowerCase(),
         destination: payout.doctor.stripeConnectAccountId,
         description: `Consultation payout for appointment ${appointmentId}`,
@@ -395,12 +357,11 @@ const releasePayoutToDoctor = async (appointmentId: string) => {
 
       return { status: "PROCESSING", stripeTransferId: transfer.id };
     } catch (err) {
-      // Transfer failed — mark as ELIGIBLE so admin can handle manually
       console.error("Stripe Transfer failed, marking as ELIGIBLE:", err);
     }
   }
 
-  // No Stripe Connect — mark as ELIGIBLE for manual admin payout
+  // mark eligible for manual admin transfer
   await prisma.doctorPayout.update({
     where: { id: payout.id },
     data: { status: "ELIGIBLE", eligibleAt: now },
@@ -409,13 +370,7 @@ const releasePayoutToDoctor = async (appointmentId: string) => {
   return { status: "ELIGIBLE" };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Admin: Trigger Manual Payout
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Admin marks a payout as PAID (for bank transfers done outside Stripe).
- */
+// Admin marks a payout as paid manually
 const markPayoutAsPaid = async (payoutId: string) => {
   const payout = await prisma.doctorPayout.findUnique({
     where: { id: payoutId },
@@ -439,14 +394,7 @@ const markPayoutAsPaid = async (payoutId: string) => {
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Stripe Connect — Onboarding & Status
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Returns whether the doctor has connected a Stripe account.
- * Used by the frontend to show/hide connect CTA.
- */
+// Check doctor's Stripe Connect status
 const getStripeConnectStatus = async (userId: string) => {
   const doctor = await prisma.doctor.findUnique({
     where: { userId },
@@ -461,11 +409,7 @@ const getStripeConnectStatus = async (userId: string) => {
   };
 };
 
-/**
- * Creates or retrieves a Stripe Connect Express account for the doctor,
- * then generates a fresh Account Link (onboarding URL) to redirect them to.
- * Call this when the doctor clicks "Connect Bank Account".
- */
+// Generate Stripe Connect Express onboarding url
 const createStripeConnectOnboardingLink = async ({
   userId,
   returnUrl,
@@ -484,7 +428,7 @@ const createStripeConnectOnboardingLink = async ({
 
   let accountId = doctor.stripeConnectAccountId;
 
-  // Create a new Stripe Connect Express account if one doesn't exist yet
+  // create express account if it does not exist
   if (!accountId) {
     const account = await stripe.accounts.create({
       type: "express",
@@ -494,7 +438,7 @@ const createStripeConnectOnboardingLink = async ({
       },
       business_profile: {
         name: doctor.user.name,
-        mcc: "8099", // Health practitioners
+        mcc: "8099",
         url: config.FRONTEND_URL,
       },
       metadata: { doctorId: doctor.id, userId },
@@ -502,14 +446,13 @@ const createStripeConnectOnboardingLink = async ({
 
     accountId = account.id;
 
-    // Persist the new account ID immediately
     await prisma.doctor.update({
       where: { id: doctor.id },
       data: { stripeConnectAccountId: accountId },
     });
   }
 
-  // Generate a fresh onboarding link (links expire after a few minutes)
+  // generate signup link
   const accountLink = await stripe.accountLinks.create({
     account: accountId,
     return_url: returnUrl,
@@ -520,16 +463,7 @@ const createStripeConnectOnboardingLink = async ({
   return { url: accountLink.url, accountId };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Doctor Self-Service Withdrawal
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Doctor requests a withdrawal for a specific ELIGIBLE payout.
- * - If they have a Stripe Connect account → immediate Stripe Transfer.
- * - If not → returns a 402 with needsConnect=true so the frontend
- *   can redirect them to the connect onboarding flow.
- */
+// Handle withdrawal requests
 const withdrawPayout = async ({
   payoutId,
   userId,
@@ -558,14 +492,13 @@ const withdrawPayout = async ({
     );
   }
 
-  // No Stripe Connect yet — tell frontend to prompt connection
   if (!doctor.stripeConnectAccountId) {
     return { needsConnect: true, payoutId };
   }
 
-  // Initiate Stripe Transfer
+  // transfer the funds
   const transfer = await stripe.transfers.create({
-    amount: Math.round(Number(payout.amount) * 100), // back to cents
+    amount: Math.round(Number(payout.amount) * 100),
     currency: payout.currency.toLowerCase(),
     destination: doctor.stripeConnectAccountId,
     description: `Doctor withdrawal — payout ${payoutId}`,
@@ -588,10 +521,7 @@ const withdrawPayout = async ({
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Get Payouts (admin or doctor)
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Retrieve doctor payouts
 const getPayouts = async (payload: {
   doctorId?: string;
   status?: string;
@@ -634,14 +564,12 @@ const getPayouts = async (payload: {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Existing helpers (unchanged surface)
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Success payment redirect
 const successPaymentHandler = async (sessionId: string) => {
   return retryPaymentProcess({ sessionId });
 };
 
+// Verify checkout status and process success or failure
 const retryPaymentProcess = async (payload: { sessionId: string }) => {
   const session = await stripe.checkout.sessions.retrieve(payload.sessionId);
   const paymentIntentId = session.payment_intent;
@@ -681,6 +609,7 @@ const retryPaymentProcess = async (payload: { sessionId: string }) => {
   };
 };
 
+// Create new checkout session for repayment
 const repayment = async (payload: { appointmentId: string }) => {
   const appointment = await prisma.appointment.findUnique({
     where: { id: payload.appointmentId },
@@ -688,7 +617,6 @@ const repayment = async (payload: { appointmentId: string }) => {
 
   if (!appointment) throw new AppError(400, "Invalid Appointment ID");
 
-  // Block repayment if already paid
   const existSuccessPayment = await prisma.payment.findFirst({
     where: { appointmentId: appointment.id, status: "COMPLETED" },
   });
@@ -707,6 +635,7 @@ const repayment = async (payload: { appointmentId: string }) => {
   return createPaymentCheckoutSession(data);
 };
 
+// Retrieve payments list
 const getPayments = async (payload: { filters: IPaymentFilters }) => {
   const { page, limit, skip, sortBy, sortOrder } =
     paginationHelper.calculatePagination({
@@ -760,7 +689,6 @@ const getPayments = async (payload: { filters: IPaymentFilters }) => {
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 export const paymentService = {
   createPaymentCheckoutSession,
   handleStripeWebhook,

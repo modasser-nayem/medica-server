@@ -158,6 +158,7 @@ const getAppointments = async ({
     where.OR = [{ patientId: userId }, { doctorId: userId }];
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (status && status.trim() !== "") where.status = status as any;
 
   const [data, total] = await Promise.all([
@@ -409,7 +410,7 @@ const cancelAppointment = async (payload: {
     throw new AppError(400, "Appointment is already cancelled");
   }
 
-  // ❌ Block cancellation once the appointment slot has started (Patients only!)
+  // check start time
   const now = new Date();
   if (userRole === "PATIENT" && appointment.startsAt <= now) {
     throw new AppError(
@@ -418,7 +419,7 @@ const cancelAppointment = async (payload: {
     );
   }
 
-  // Find the completed payment for this appointment
+  // find payment record
   const paymentRecord = await prisma.payment.findFirst({
     where: { appointmentId: appointment.id, status: "COMPLETED" },
   });
@@ -426,7 +427,7 @@ const cancelAppointment = async (payload: {
   let refundId: string | null = null;
 
   if (paymentRecord && paymentRecord.paymentIntentId) {
-    // Issue full refund — amount stored in cents, pass directly
+    // issue refund
     const refund = await paymentService.refundPayment({
       paymentId: paymentRecord.id,
       paymentIntentId: paymentRecord.paymentIntentId,
