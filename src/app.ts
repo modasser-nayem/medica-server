@@ -12,6 +12,7 @@ import { generalLimiter } from "./app/middlewares/rateLimiter";
 import { metricsMiddleware } from "./app/middlewares/metricsMiddleware";
 import { metricsHelper } from "./utils/metrics";
 import { APP_CONFIG } from "./constants/constants";
+import { stripeWebhookHandler } from "./app/modules/Payment/payment.routes";
 
 class App {
   public app: express.Application;
@@ -33,6 +34,13 @@ class App {
         methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
         allowedHeaders: ["Content-Type", "Authorization"],
       }),
+    );
+
+    // raw routes for stripe webhook payment
+    this.app.post(
+      "/api/v1/payments/webhook",
+      express.raw({ type: "application/json" }),
+      stripeWebhookHandler,
     );
 
     this.app.use(express.json());

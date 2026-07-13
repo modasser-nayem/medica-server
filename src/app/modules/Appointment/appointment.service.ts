@@ -10,6 +10,7 @@ import {
 import { doctorService } from "../Doctor/doctor.service";
 import { addMinutes, format } from "date-fns";
 import { paginationHelper } from "../../../utils/pagination";
+import { paymentService } from "../Payment/payment.service";
 
 const createAppointment = async (data: TCreateAppointment) => {
   const startsAt = new Date(data.startsAt);
@@ -87,8 +88,7 @@ const createAppointment = async (data: TCreateAppointment) => {
     },
   });
 
-  // TODO: implement later with actual payment service
-  const intent = {
+  const intent = await paymentService.createPaymentCheckoutSession({
     amount: feeAmount,
     currency: currency,
     metadata: {
@@ -96,8 +96,7 @@ const createAppointment = async (data: TCreateAppointment) => {
       patientId: data.patientId,
       doctorId: data.doctorId,
     },
-    checkoutUrl: "http://example.com/checkout",
-  };
+  });
 
   return {
     appointmentId: newApt.id,
@@ -428,12 +427,10 @@ const cancelAppointment = async (payload: {
 
   if (paymentRecord && paymentRecord.paymentIntentId) {
     // Issue full refund — amount stored in cents, pass directly
-    // TODO: implement later with actual payment service
-    const refund = {
+    const refund = await paymentService.refundPayment({
       paymentId: paymentRecord.id,
       paymentIntentId: paymentRecord.paymentIntentId,
-      refundId: "sdfsdf",
-    };
+    });
     refundId = refund.refundId;
   }
 
