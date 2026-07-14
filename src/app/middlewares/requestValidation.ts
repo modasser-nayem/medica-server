@@ -9,8 +9,17 @@ const requestValidate = (schema: ZodSchema) => {
       params: req.params,
     });
     req.body = result.body;
-    req.query = result.query;
-    req.params = result.params;
+
+    if (result.query) {
+      Object.keys(req.query).forEach((key) => delete req.query[key]);
+      Object.assign(req.query, result.query);
+    }
+
+    if (result.params) {
+      Object.keys(req.params).forEach((key) => delete req.params[key]);
+      Object.assign(req.params, result.params);
+    }
+
     next();
   });
 };
