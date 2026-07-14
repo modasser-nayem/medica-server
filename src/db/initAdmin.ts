@@ -22,6 +22,6 @@ export const initiateAdmin = async () => {
   if (isExistUser) return;
 
   await prisma.user.create({
-    data: { ...payload, password: hashedPassword, isEmailVerified: true },
+    data: { ...payload, password: hashedPassword },
   });
 };
