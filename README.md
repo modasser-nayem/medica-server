@@ -8,7 +8,7 @@ A comprehensive, secure, and user-friendly online platform for patients, doctors
 
 - **Backend API**: [https://medica-server.onrender.com](https://medica-server.onrender.com)
 - **Frontend**: [https://medica-health.vercel.app](https://medica-health.vercel.app)
-- **GitHub Code**: [https://github.com/modasser-nayem/medica-backend-p16](https://github.com/modasser-nayem/medica-backend-p16)
+- **GitHub Code**: [https://github.com/modasser-nayem/medica-server](https://github.com/modasser-nayem/medica-server)
 
 ---
 
@@ -104,8 +104,8 @@ The backend follows a layered, modular architecture:
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/modasser-nayem/medica-backend-p16.git
-cd medica-backend-p16
+git clone https://github.com/modasser-nayem/medica-server.git
+cd medica-server
 npm install
 ```
 
@@ -117,7 +117,7 @@ Copy `.env.example` to `.env` and fill out variables:
 cp .env.example .env
 ```
 
-Ensure key properties like `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `CLOUDINARY_CLOUD_NAME`, `SMTP_HOST_EMAIL`, and `SMTP_APP_PASS` are defined.
+Ensure key properties like `DATABASE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SMTP_HOST_EMAIL`, and `SMTP_APP_PASS` are defined.
 
 ### 3. Migrate Database & Start
 
