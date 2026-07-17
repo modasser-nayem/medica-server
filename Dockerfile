@@ -46,4 +46,4 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 5050
 
 # Run migrations and start the application
-CMD ["sh", "-c", "yarn prisma migrate deploy && yarn start"]
+CMD ["yarn", "start"]
