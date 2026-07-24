@@ -260,8 +260,8 @@ const endCall = async (callId: string, userProfileId: string) => {
     data: { status: "COMPLETED" },
   });
 
-  // release payout from escrow
-  await paymentService.releasePayoutToDoctor(appointment.id);
+  // Credit doctor wallet from escrow
+  await paymentService.creditDoctorEarnings(appointment.id);
 
   // notify via socket
   if (socketManager.io) {
@@ -321,11 +321,11 @@ const completeConsultation = async (appointmentId: string, doctorProfileId: stri
     data: { status: "COMPLETED" },
   });
 
-  // release payout
+  // Credit doctor wallet from escrow
   try {
-    await paymentService.releasePayoutToDoctor(appointmentId);
+    await paymentService.creditDoctorEarnings(appointmentId);
   } catch (err) {
-    console.error("Failed to release payout during manual complete:", err);
+    console.error("Failed to credit doctor earnings during manual complete:", err);
   }
 
   // notify via socket

@@ -23,14 +23,19 @@ const getAdminStats = async (): Promise<IAdminStats> => {
 
   const totalPatient = users.filter((user) => user.role === "PATIENT").length;
 
-  const payments = await prisma.payment.findMany({
+  const paymentsAgg = await prisma.payment.aggregate({
     where: { status: "COMPLETED" },
+    _sum: { amount: true },
   });
 
-  const totalRevenue = payments.reduce(
-    (acc, payment) => acc + Number(payment.amount),
-    0,
-  );
+  const totalRevenue = (paymentsAgg._sum.amount ?? 0) / 100;
+
+  const payoutsAgg = await prisma.doctorPayout.aggregate({
+    where: { status: "PAID" },
+    _sum: { commissionAmount: true },
+  });
+
+  const platformRevenue = Number(payoutsAgg._sum.commissionAmount ?? 0);
 
   const completedAppointments = await prisma.appointment.count({
     where: { status: "COMPLETED" },
@@ -49,6 +54,7 @@ const getAdminStats = async (): Promise<IAdminStats> => {
     totalDoctor,
     totalPatient,
     totalRevenue,
+    platformRevenue,
     completedAppointments,
     todaysAppointments,
   };
