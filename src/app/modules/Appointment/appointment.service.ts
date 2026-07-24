@@ -73,7 +73,7 @@ const createAppointment = async (data: TCreateAppointment) => {
   }
 
   const feeAmount = Number(doctor.consultationFee);
-  const currency = "BDT";
+  const currency = "USD";
 
   // 4. Create appointment (status = PENDING until payment completes)
   const newApt = await prisma.appointment.create({

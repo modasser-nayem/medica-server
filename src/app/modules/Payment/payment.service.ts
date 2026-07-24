@@ -51,7 +51,7 @@ const createCheckoutSession = async (data: ICreatePaymentIntent) => {
   await prisma.payment.create({
     data: {
       appointmentId: data.metadata.appointmentId,
-      amount: amountInCents,
+      amount: data.amount,
       currency: data.currency,
       externalId: session.id,
       status: "PENDING",
@@ -164,7 +164,7 @@ const _onPaymentSuccess = async ({
     });
 
     // 4. Create escrow payout with commission split
-    const grossAmount = updatedPayment.amount / 100; // convert cents → base unit
+    const grossAmount = Number(updatedPayment.amount); // use base unit directly
     const commissionRate = PLATFORM_COMMISSION_RATE;
     const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
     const doctorAmount = Math.round((grossAmount - commissionAmount) * 100) / 100;
@@ -226,7 +226,7 @@ const _onPaymentFailure = async ({ sessionId, reason }: { sessionId: string; rea
     await tx.transaction.create({
       data: {
         userId: payment.appointment.patient.userId,
-        amount: payment.amount / 100,
+        amount: Number(payment.amount),
         currency: payment.currency,
         type: "DEBIT",
         status: "FAILED",
@@ -273,7 +273,7 @@ const verifyAndProcessPayment = async (sessionId: string) => {
 
   return {
     status: intent.status,
-    amount: paymentRecord.amount / 100,
+    amount: Number(paymentRecord.amount),
     currency: paymentRecord.currency,
   };
 };
@@ -362,7 +362,7 @@ const refundPayment = async (paymentId: string, paymentIntentId: string) => {
     await tx.transaction.create({
       data: {
         userId: payment.appointment.patient.userId,
-        amount: payment.amount / 100,
+        amount: Number(payment.amount),
         currency: payment.currency,
         type: "CREDIT",
         status: "SUCCESS",
@@ -578,7 +578,7 @@ const withdrawToCard = async ({
       data: {
         doctorId: doctor.id,
         amount,
-        currency: "BDT",
+        currency: "USD",
         status: "SUCCESS",
         cardBrand,
         cardLast4,
@@ -591,7 +591,7 @@ const withdrawToCard = async ({
       data: {
         userId,
         amount,
-        currency: "BDT",
+        currency: "USD",
         type: "DEBIT",
         status: "SUCCESS",
         description: `Withdrawal to ${cardBrand} card ending in ${cardLast4}`,
