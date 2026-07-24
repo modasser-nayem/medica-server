@@ -2,75 +2,99 @@ import express from "express";
 import { authorize } from "../../middlewares/authorize";
 import { paymentController } from "./payment.controller";
 import requestValidate from "../../middlewares/requestValidation";
-import { paymentSchemaValidation } from "./payment.validataion";
+import { paymentValidation } from "./payment.validataion";
 
 const router = express.Router();
 
-// Success redirect after Stripe checkout
-router.post("/success/:sessionId", paymentController.successPaymentHandler);
+// ─────────────────────────────────────────────────────────────────────────────
+// PATIENT CHECKOUT
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Manual status check fallback
+// Verify payment after Stripe redirect (must be authenticated — prevents session snooping)
+router.post(
+  "/verify/:sessionId",
+  authorize("PATIENT"),
+  requestValidate(paymentValidation.verifyPayment),
+  paymentController.verifyPayment,
+);
+
+// Retry payment for a failed appointment — patient only
 router.post(
   "/retry",
-  authorize(),
-  requestValidate(paymentSchemaValidation.retryPaymentProcess),
-  paymentController.retryPaymentProcess,
+  authorize("PATIENT"),
+  requestValidate(paymentValidation.retryPayment),
+  paymentController.retryPayment,
 );
 
-// Create new checkout session for failed appointment payment
-router.post(
-  "/repayment",
-  authorize(),
-  requestValidate(paymentSchemaValidation.repayment),
-  paymentController.rePayment,
+// Full payment history — admin: all; doctor: own; patient: own
+router.get(
+  "/",
+  authorize("ADMIN", "DOCTOR", "PATIENT"),
+  paymentController.getPayments,
 );
 
-// List payment history
-router.get("/", authorize("ADMIN", "DOCTOR", "PATIENT"), paymentController.getPayments);
+// ─────────────────────────────────────────────────────────────────────────────
+// ESCROW PAYOUTS (Admin only — per-appointment escrow ledger with commission split)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Process refund if doctor didn't show up
+router.get(
+  "/escrow",
+  authorize("ADMIN"),
+  paymentController.getEscrowPayouts,
+);
+
+// Record doctor no-show and auto-refund patient
 router.post(
   "/no-show/:appointmentId",
   authorize("ADMIN"),
   paymentController.handleDoctorNoShow,
 );
 
-// List doctor payouts
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCTOR WALLET & WITHDRAWALS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Get doctor wallet balance, upcoming earnings, and totals
 router.get(
-  "/payouts",
+  "/wallet",
+  authorize("DOCTOR"),
+  paymentController.getDoctorWallet,
+);
+
+// Instant card withdrawal — doctor only
+router.post(
+  "/withdraw",
+  authorize("DOCTOR"),
+  requestValidate(paymentValidation.withdrawToCard),
+  paymentController.withdrawToCard,
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSACTION & WITHDRAWAL HISTORY
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Transaction ledger
+// - Patient: sees own payment/refund transactions
+// - Doctor: sees own earning/withdrawal transactions
+// - Admin: sees all (filter by ?userId= or ?type= or date range)
+router.get(
+  "/transactions",
+  authorize("ADMIN", "DOCTOR", "PATIENT"),
+  paymentController.getTransactions,
+);
+
+// Card withdrawal records
+// - Doctor: sees own withdrawals
+// - Admin: sees all (filter by ?doctorId=)
+router.get(
+  "/withdrawals",
   authorize("ADMIN", "DOCTOR"),
-  paymentController.getPayouts,
+  paymentController.getWithdrawals,
 );
 
-// Mark manual bank transfer payout as paid
-router.patch(
-  "/payouts/:payoutId/paid",
-  authorize("ADMIN"),
-  paymentController.markPayoutAsPaid,
-);
-
-// Check Stripe Connect status for doctor
-router.get(
-  "/connect/status",
-  authorize("DOCTOR"),
-  paymentController.getStripeConnectStatus,
-);
-
-// Get Stripe Connect onboarding link
-router.post(
-  "/connect/onboard",
-  authorize("DOCTOR"),
-  paymentController.createStripeConnectOnboarding,
-);
-
-// Doctor self-service withdrawal
-router.post(
-  "/payouts/:payoutId/withdraw",
-  authorize("DOCTOR"),
-  paymentController.withdrawPayout,
-);
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const paymentRoutes = router;
 
-// Webhook handler used in main app.ts
+// Stripe webhook handler is mounted separately in app.ts with raw body parser
 export const stripeWebhookHandler = paymentController.handleStripeWebhook;

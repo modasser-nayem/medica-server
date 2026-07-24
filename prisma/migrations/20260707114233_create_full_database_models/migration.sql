@@ -17,7 +17,16 @@ CREATE TYPE "ConsultationStatus" AS ENUM ('SCHEDULED', 'IN_PROGRESS', 'COMPLETED
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'COMPLETED', 'FAILED', 'REFUNDED');
 
 -- CreateEnum
-CREATE TYPE "PayoutStatus" AS ENUM ('PENDING', 'ELIGIBLE', 'PROCESSING', 'PAID', 'VOIDED');
+CREATE TYPE "PayoutStatus" AS ENUM ('PENDING', 'PAID', 'VOIDED');
+
+-- CreateEnum
+CREATE TYPE "WithdrawalStatus" AS ENUM ('SUCCESS', 'FAILED');
+
+-- CreateEnum
+CREATE TYPE "TransactionType" AS ENUM ('CREDIT', 'DEBIT');
+
+-- CreateEnum
+CREATE TYPE "TransactionStatus" AS ENUM ('SUCCESS', 'FAILED');
 
 -- CreateEnum
 CREATE TYPE "MessageType" AS ENUM ('TEXT', 'IMAGE', 'FILE', 'AUDIO', 'VIDEO');
@@ -79,7 +88,7 @@ CREATE TABLE "doctors" (
     "bio" TEXT,
     "timezone" TEXT,
     "consultationFee" DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-    "stripeConnectAccountId" TEXT,
+    "balance" DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -213,9 +222,11 @@ CREATE TABLE "doctor_payouts" (
     "doctorId" TEXT NOT NULL,
     "paymentId" TEXT NOT NULL,
     "amount" DECIMAL(10,2) NOT NULL,
+    "commissionRate" DECIMAL(5,4) NOT NULL DEFAULT 0.1000,
+    "commissionAmount" DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    "doctorAmount" DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     "currency" TEXT NOT NULL DEFAULT 'BDT',
     "status" "PayoutStatus" NOT NULL DEFAULT 'PENDING',
-    "stripeTransferId" TEXT,
     "eligibleAt" TIMESTAMP(3),
     "paidAt" TIMESTAMP(3),
     "noShowAt" TIMESTAMP(3),
@@ -223,6 +234,39 @@ CREATE TABLE "doctor_payouts" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "doctor_payouts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "withdrawals" (
+    "id" TEXT NOT NULL,
+    "doctorId" TEXT NOT NULL,
+    "amount" DECIMAL(10,2) NOT NULL,
+    "currency" TEXT NOT NULL DEFAULT 'BDT',
+    "status" "WithdrawalStatus" NOT NULL DEFAULT 'SUCCESS',
+    "cardBrand" TEXT NOT NULL,
+    "cardLast4" TEXT NOT NULL,
+    "cardHolderName" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "withdrawals_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "transactions" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "amount" DECIMAL(10,2) NOT NULL,
+    "currency" TEXT NOT NULL DEFAULT 'BDT',
+    "type" "TransactionType" NOT NULL,
+    "status" "TransactionStatus" NOT NULL DEFAULT 'SUCCESS',
+    "description" TEXT NOT NULL,
+    "referenceId" TEXT,
+    "withdrawalId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "transactions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -334,13 +378,13 @@ CREATE UNIQUE INDEX "schedules_doctorId_dayOfWeek_key" ON "schedules"("doctorId"
 CREATE INDEX "schedule_exceptions_doctorId_date_idx" ON "schedule_exceptions"("doctorId", "date");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "appointments_doctorId_startsAt_key" ON "appointments"("doctorId", "startsAt");
+
+-- CreateIndex
 CREATE INDEX "appointments_patientId_startsAt_idx" ON "appointments"("patientId", "startsAt");
 
 -- CreateIndex
 CREATE INDEX "appointments_doctorId_startsAt_idx" ON "appointments"("doctorId", "startsAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "appointments_doctorId_startsAt_key" ON "appointments"("doctorId", "startsAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "consultations_appointmentId_key" ON "consultations"("appointmentId");
@@ -358,10 +402,22 @@ CREATE UNIQUE INDEX "doctor_payouts_paymentId_key" ON "doctor_payouts"("paymentI
 CREATE INDEX "doctor_payouts_doctorId_status_idx" ON "doctor_payouts"("doctorId", "status");
 
 -- CreateIndex
-CREATE INDEX "chat_threads_patientId_doctorId_idx" ON "chat_threads"("patientId", "doctorId");
+CREATE INDEX "withdrawals_doctorId_idx" ON "withdrawals"("doctorId");
+
+-- CreateIndex
+CREATE INDEX "transactions_userId_idx" ON "transactions"("userId");
+
+-- CreateIndex
+CREATE INDEX "transactions_userId_type_idx" ON "transactions"("userId", "type");
+
+-- CreateIndex
+CREATE INDEX "transactions_createdAt_idx" ON "transactions"("createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "chat_threads_patientId_doctorId_key" ON "chat_threads"("patientId", "doctorId");
+
+-- CreateIndex
+CREATE INDEX "chat_threads_patientId_doctorId_idx" ON "chat_threads"("patientId", "doctorId");
 
 -- CreateIndex
 CREATE INDEX "chat_messages_threadId_createdAt_idx" ON "chat_messages"("threadId", "createdAt");
@@ -416,6 +472,21 @@ ALTER TABLE "doctor_payouts" ADD CONSTRAINT "doctor_payouts_doctorId_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "doctor_payouts" ADD CONSTRAINT "doctor_payouts_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "payments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "withdrawals" ADD CONSTRAINT "withdrawals_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "doctors"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "transactions" ADD CONSTRAINT "transactions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "transactions" ADD CONSTRAINT "transactions_withdrawalId_fkey" FOREIGN KEY ("withdrawalId") REFERENCES "withdrawals"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "chat_threads" ADD CONSTRAINT "chat_threads_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "patients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "chat_threads" ADD CONSTRAINT "chat_threads_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "doctors"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "chat_threads"("id") ON DELETE CASCADE ON UPDATE CASCADE;

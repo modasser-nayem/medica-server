@@ -88,7 +88,7 @@ const createAppointment = async (data: TCreateAppointment) => {
     },
   });
 
-  const intent = await paymentService.createPaymentCheckoutSession({
+  const intent = await paymentService.createCheckoutSession({
     amount: feeAmount,
     currency: currency,
     metadata: {
@@ -428,24 +428,26 @@ const cancelAppointment = async (payload: {
 
   if (paymentRecord && paymentRecord.paymentIntentId) {
     // issue refund
-    const refund = await paymentService.refundPayment({
-      paymentId: paymentRecord.id,
-      paymentIntentId: paymentRecord.paymentIntentId,
-    });
+    const refund = await paymentService.refundPayment(
+      paymentRecord.id,
+      paymentRecord.paymentIntentId,
+    );
     refundId = refund.refundId;
   }
 
-  await prisma.appointment.update({
-    where: { id: appointmentId },
-    data: { status: "CANCELLED", cancelReason: data.cancelReason },
-  });
-
-  if (appointment.consultation) {
-    await prisma.consultation.update({
-      where: { id: appointment.consultation.id },
-      data: { status: "CANCELLED" },
+  await prisma.$transaction(async (tx) => {
+    await tx.appointment.update({
+      where: { id: appointmentId },
+      data: { status: "CANCELLED", cancelReason: data.cancelReason },
     });
-  }
+
+    if (appointment.consultation) {
+      await tx.consultation.update({
+        where: { id: appointment.consultation.id },
+        data: { status: "CANCELLED" },
+      });
+    }
+  });
 
   return { appointmentId, refundId };
 };

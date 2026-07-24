@@ -38,12 +38,12 @@ const createPrescription = async (doctorProfileId: string, data: any) => {
       data: { status: "COMPLETED" },
     });
 
-    // Release escrow payout to doctor
+    // Credit doctor wallet once consultation is confirmed complete
     try {
-      await paymentService.releasePayoutToDoctor(consultation.appointmentId);
+      await paymentService.creditDoctorEarnings(consultation.appointmentId);
     } catch (err) {
       // Log error but do not fail prescription creation
-      console.error("Failed to release payout to doctor:", err);
+      console.error("Failed to credit doctor earnings:", err);
     }
   }
 

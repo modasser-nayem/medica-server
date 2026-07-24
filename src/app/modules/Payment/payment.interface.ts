@@ -1,5 +1,3 @@
-import { PaginationQuery } from "../../../utils/pagination";
-
 export interface ICreatePaymentIntent {
   amount: number;
   currency: string;
@@ -10,23 +8,31 @@ export interface ICreatePaymentIntent {
   };
 }
 
-export interface IPaymentFilters extends PaginationQuery {
+export interface IPaymentFilters {
   patientId?: string;
   doctorId?: string;
   status?: string;
   startDate?: string;
   endDate?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
 }
 
-export interface IPaymentStats {
-  total: number;
-  totalAmount: number;
-  byStatus: Record<string, number>;
-  byMonth: Record<string, number>;
+export interface ITransactionFilters {
+  userId?: string;
+  type?: "CREDIT" | "DEBIT";
+  status?: "SUCCESS" | "FAILED";
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
 }
 
-export interface IPaymentRefund {
-  paymentId: string;
-  amount?: number;
-  reason?: string;
+export interface IWithdrawalFilters {
+  doctorId?: string;
+  status?: "SUCCESS" | "FAILED";
+  page?: number;
+  limit?: number;
 }
