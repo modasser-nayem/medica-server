@@ -10,7 +10,9 @@ const sendMessage = async (payload: {
   recipientId: string;
   text?: string;
   attachment?: string;
+  attachments?: string[];
   attachmentType?: string;
+  replyToId?: string;
 }) => {
   const {
     senderId,
@@ -19,7 +21,9 @@ const sendMessage = async (payload: {
     recipientId,
     text,
     attachment,
+    attachments,
     attachmentType,
+    replyToId,
   } = payload;
 
   // Find recipient user
@@ -99,9 +103,11 @@ const sendMessage = async (payload: {
       consultationId: activeApt.consultation?.id || null,
       text,
       attachment,
+      attachments: attachments || (attachment ? [attachment] : []),
       // Map attachmentType string to MessageType enum; default to TEXT
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: (attachmentType as any) || (attachment ? "FILE" : "TEXT"),
+      replyToId,
     },
     include: {
       sender: {
@@ -111,6 +117,7 @@ const sendMessage = async (payload: {
           profileImage: true,
         },
       },
+      replyTo: true,
     },
   });
 
@@ -260,6 +267,7 @@ const getThreadMessages = async (threadId: string) => {
           profileImage: true,
         },
       },
+      replyTo: true,
     },
   });
 

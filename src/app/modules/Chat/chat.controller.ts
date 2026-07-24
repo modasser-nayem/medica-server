@@ -32,32 +32,37 @@ const getThreadMessages = asyncHandler(async (req, res) => {
   });
 });
 
-// Upload file attachment
+// Upload file attachments
 const uploadAttachment = asyncHandler(async (req, res) => {
-  const uploaded = await FileUploadHelper.uploadSingle(
-    req.file,
+  const files = req.files as Express.Multer.File[];
+  if (!files || files.length === 0) {
+    throw new AppError(400, "No files provided");
+  }
+
+  const uploadedFiles = await FileUploadHelper.uploadMultiple(
+    files,
     {
       folderName: UploadFolder.CHAT_ATTACHMENTS,
       required: true,
-      fieldLabel: "Attachment",
+      fieldLabel: "Attachments",
     },
   );
 
-  if (!uploaded) {
+  if (!uploadedFiles || uploadedFiles.length === 0) {
     throw new AppError(400, "Upload failed");
   }
 
   sendResponse(res, {
     statusCode: 200,
     success: true,
-    message: "File uploaded successfully",
-    data: {
-      url: uploaded.secure_url,
-      publicId: uploaded.public_id,
-      format: uploaded.format,
-      bytes: uploaded.bytes,
-      resourceType: uploaded.resource_type,
-    },
+    message: "Files uploaded successfully",
+    data: uploadedFiles.map((file) => ({
+      url: file.secure_url,
+      publicId: file.public_id,
+      format: file.format,
+      bytes: file.bytes,
+      resourceType: file.resource_type,
+    })),
   });
 });
 

@@ -64,7 +64,9 @@ export const registerChatHandlers = (
       recipientId: string;
       text?: string;
       attachment?: string;
+      attachments?: string[];
       attachmentType?: string;
+      replyToId?: string;
     }) => {
       try {
         const message = await chatService.sendMessage({
@@ -74,7 +76,9 @@ export const registerChatHandlers = (
           recipientId: payload.recipientId,
           text: payload.text,
           attachment: payload.attachment,
+          attachments: payload.attachments,
           attachmentType: payload.attachmentType,
+          replyToId: payload.replyToId,
         });
 
         socket.emit("message_sent", message);
