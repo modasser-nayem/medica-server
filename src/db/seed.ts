@@ -191,18 +191,18 @@ async function main() {
       doctorId: doctors[0].id,
       startsAt: pastStartsAt,
       endsAt: pastEndsAt,
-      currency: "BDT",
+      currency: "USD",
       price: 1500.00,
       status: AppointmentStatus.COMPLETED
     }
   });
 
-  // Create payment record for completed appointment (Amount in cents/paisa)
+  // Create payment record for completed appointment (Amount in base unit)
   const payment = await prisma.payment.create({
     data: {
       appointmentId: completedAppt.id,
-      amount: 150000, 
-      currency: "BDT",
+      amount: 1500.00, 
+      currency: "USD",
       externalId: `dummy_session_${completedAppt.id}`,
       status: PaymentStatus.COMPLETED
     }
@@ -234,7 +234,7 @@ async function main() {
       {
         userId: patients[0].userId,
         amount: 1500.00,
-        currency: "BDT",
+        currency: "USD",
         type: TransactionType.DEBIT,
         status: TransactionStatus.SUCCESS,
         description: `Payment for appointment with ${doctorUsers[0].name}`,
@@ -243,7 +243,7 @@ async function main() {
       {
         userId: doctors[0].userId,
         amount: doctorAmount,
-        currency: "BDT",
+        currency: "USD",
         type: TransactionType.CREDIT,
         status: TransactionStatus.SUCCESS,
         description: `Earnings for completed appointment with ${patientUsers[0].name}`,
@@ -266,7 +266,7 @@ async function main() {
       doctorId: doctors[1].id,
       startsAt: futureStartsAt,
       endsAt: futureEndsAt,
-      currency: "BDT",
+      currency: "USD",
       price: 1500.00,
       status: AppointmentStatus.CONFIRMED
     }
@@ -275,8 +275,8 @@ async function main() {
   const pendingPayment = await prisma.payment.create({
     data: {
       appointmentId: pendingAppt.id,
-      amount: 150000, 
-      currency: "BDT",
+      amount: 1500.00, 
+      currency: "USD",
       externalId: `dummy_session_${pendingAppt.id}`,
       status: PaymentStatus.COMPLETED
     }
@@ -299,7 +299,7 @@ async function main() {
     data: {
       userId: patients[1].userId,
       amount: 1500.00,
-      currency: "BDT",
+      currency: "USD",
       type: TransactionType.DEBIT,
       status: TransactionStatus.SUCCESS,
       description: `Payment for upcoming appointment with ${doctorUsers[1].name}`,

@@ -28,7 +28,7 @@ const getAdminStats = async (): Promise<IAdminStats> => {
     _sum: { amount: true },
   });
 
-  const totalRevenue = (paymentsAgg._sum.amount ?? 0) / 100;
+  const totalRevenue = Number(paymentsAgg._sum.amount ?? 0);
 
   const payoutsAgg = await prisma.doctorPayout.aggregate({
     where: { status: "PAID" },

@@ -23,7 +23,7 @@ router.get(
 router.post(
   "/upload",
   authorize("PATIENT", "DOCTOR"),
-  uploadAttachmentMiddleware.single("file"),
+  uploadAttachmentMiddleware.array("files", 10), // Limit to 10 files per request
   chatController.uploadAttachment,
 );
 
