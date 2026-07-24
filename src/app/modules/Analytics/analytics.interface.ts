@@ -5,6 +5,7 @@ export interface IAdminStats {
   totalDoctor: number;
   totalPatient: number;
   totalRevenue: number;
+  platformRevenue: number;
   completedAppointments: number;
   todaysAppointments: number;
 }
