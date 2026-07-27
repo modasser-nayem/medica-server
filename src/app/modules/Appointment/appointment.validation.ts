@@ -6,6 +6,8 @@ const createAppointment = z.object({
       patientId: z.string().uuid("Invalid patient ID"),
       doctorId: z.string().uuid("Invalid doctor ID"),
       startsAt: z.string().datetime(),
+      successUrl: z.string().min(1, "successUrl is required"),
+      cancelUrl: z.string().min(1, "cancelUrl is required"),
     })
     .refine((data) => new Date(data.startsAt).getTime() > Date.now(), {
       message: "Start time must be in the future (UTC)",

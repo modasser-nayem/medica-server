@@ -31,7 +31,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
 // Create a new checkout session for a failed appointment
 const retryPayment = asyncHandler(async (req, res) => {
-  const result = await paymentService.retryPayment(req.body.appointmentId);
+  const result = await paymentService.retryPayment(req.body);
   sendResponse(res, {
     statusCode: 201,
     success: true,

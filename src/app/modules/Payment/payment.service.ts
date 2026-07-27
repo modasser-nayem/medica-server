@@ -1,6 +1,11 @@
 import prisma from "../../../db/connector";
 import Stripe from "stripe";
-import { ICreatePaymentIntent, IPaymentFilters, ITransactionFilters, IWithdrawalFilters } from "./payment.interface";
+import {
+  ICreatePaymentIntent,
+  IPaymentFilters,
+  ITransactionFilters,
+  IWithdrawalFilters,
+} from "./payment.interface";
 import config from "../../../config";
 import AppError from "../../../errors/AppError";
 import { paginationHelper } from "../../../utils/pagination";
@@ -12,7 +17,9 @@ import stripe from "../../../config/stripe";
 
 // Platform keeps this fraction of every consultation payment
 // e.g. 0.1 = 10%  |  override via PLATFORM_COMMISSION_RATE env var
-const PLATFORM_COMMISSION_RATE = Number(process.env.PLATFORM_COMMISSION_RATE ?? 0.1);
+const PLATFORM_COMMISSION_RATE = Number(
+  process.env.PLATFORM_COMMISSION_RATE ?? 0.1,
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATIENT CHECKOUT
@@ -24,6 +31,21 @@ const PLATFORM_COMMISSION_RATE = Number(process.env.PLATFORM_COMMISSION_RATE ?? 
  */
 const createCheckoutSession = async (data: ICreatePaymentIntent) => {
   const amountInCents = Math.round(data.amount * 100);
+
+  let success_url = data.successUrl;
+  if (!success_url.includes("{CHECKOUT_SESSION_ID}")) {
+    const successSeparator = success_url.includes("?") ? "&" : "?";
+    success_url = `${success_url}${successSeparator}session_id={CHECKOUT_SESSION_ID}`;
+  }
+  if (!success_url.includes("appointmentId=")) {
+    success_url = `${success_url}&appointmentId=${data.metadata.appointmentId}`;
+  }
+
+  let cancel_url = data.cancelUrl;
+  if (!cancel_url.includes("{CHECKOUT_SESSION_ID}")) {
+    const cancelSeparator = cancel_url.includes("?") ? "&" : "?";
+    cancel_url = `${cancel_url}${cancelSeparator}session_id={CHECKOUT_SESSION_ID}`;
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -44,8 +66,8 @@ const createCheckoutSession = async (data: ICreatePaymentIntent) => {
       doctorId: data.metadata.doctorId,
     },
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // 30 min
-    success_url: `${config.FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${config.FRONTEND_URL}/payment/cancel?session_id={CHECKOUT_SESSION_ID}`,
+    success_url: success_url,
+    cancel_url: cancel_url,
   });
 
   await prisma.payment.create({
@@ -67,7 +89,10 @@ const createCheckoutSession = async (data: ICreatePaymentIntent) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const handleStripeWebhook = async (payload: { sig: string | string[]; body: any }) => {
+const handleStripeWebhook = async (payload: {
+  sig: string | string[];
+  body: any;
+}) => {
   let event: Stripe.Event;
 
   try {
@@ -76,7 +101,7 @@ const handleStripeWebhook = async (payload: { sig: string | string[]; body: any 
       payload.sig,
       config.stripe.STRIPE_WEBHOOK_SECRET,
     );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
     throw new AppError(400, `Webhook Error: ${err.message}`);
   }
@@ -84,7 +109,10 @@ const handleStripeWebhook = async (payload: { sig: string | string[]; body: any 
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
-      if (session.payment_status === "paid" && session.metadata?.appointmentId) {
+      if (
+        session.payment_status === "paid" &&
+        session.metadata?.appointmentId
+      ) {
         await _onPaymentSuccess({
           sessionId: session.id,
           appointmentId: session.metadata.appointmentId,
@@ -95,7 +123,10 @@ const handleStripeWebhook = async (payload: { sig: string | string[]; body: any 
     }
     case "checkout.session.expired": {
       const session = event.data.object as Stripe.Checkout.Session;
-      await _onPaymentFailure({ sessionId: session.id, reason: "Checkout session expired" });
+      await _onPaymentFailure({
+        sessionId: session.id,
+        reason: "Checkout session expired",
+      });
       break;
     }
     case "payment_intent.payment_failed": {
@@ -137,7 +168,9 @@ const _onPaymentSuccess = async ({
   appointmentId: string;
   paymentIntentId: string | null;
 }) => {
-  const existing = await prisma.payment.findUnique({ where: { externalId: sessionId } });
+  const existing = await prisma.payment.findUnique({
+    where: { externalId: sessionId },
+  });
   if (!existing || existing.status === "COMPLETED") return;
 
   await prisma.$transaction(async (tx) => {
@@ -166,10 +199,14 @@ const _onPaymentSuccess = async ({
     // 4. Create escrow payout with commission split
     const grossAmount = Number(updatedPayment.amount); // use base unit directly
     const commissionRate = PLATFORM_COMMISSION_RATE;
-    const commissionAmount = Math.round(grossAmount * commissionRate * 100) / 100;
-    const doctorAmount = Math.round((grossAmount - commissionAmount) * 100) / 100;
+    const commissionAmount =
+      Math.round(grossAmount * commissionRate * 100) / 100;
+    const doctorAmount =
+      Math.round((grossAmount - commissionAmount) * 100) / 100;
 
-    const existingPayout = await tx.doctorPayout.findUnique({ where: { appointmentId } });
+    const existingPayout = await tx.doctorPayout.findUnique({
+      where: { appointmentId },
+    });
     if (!existingPayout) {
       await tx.doctorPayout.create({
         data: {
@@ -205,7 +242,13 @@ const _onPaymentSuccess = async ({
  * Called when payment fails or session expires — cancels the appointment
  * and logs a FAILED DEBIT transaction for the patient.
  */
-const _onPaymentFailure = async ({ sessionId, reason }: { sessionId: string; reason: string }) => {
+const _onPaymentFailure = async ({
+  sessionId,
+  reason,
+}: {
+  sessionId: string;
+  reason: string;
+}) => {
   const payment = await prisma.payment.findUnique({
     where: { externalId: sessionId },
     include: {
@@ -217,7 +260,10 @@ const _onPaymentFailure = async ({ sessionId, reason }: { sessionId: string; rea
   if (!payment || payment.status !== "PENDING") return;
 
   await prisma.$transaction(async (tx) => {
-    await tx.payment.update({ where: { externalId: sessionId }, data: { status: "FAILED" } });
+    await tx.payment.update({
+      where: { externalId: sessionId },
+      data: { status: "FAILED" },
+    });
     await tx.appointment.update({
       where: { id: payment.appointmentId },
       data: { status: "CANCELLED", cancelReason: `Payment failed: ${reason}` },
@@ -253,7 +299,9 @@ const verifyAndProcessPayment = async (sessionId: string) => {
     throw new AppError(400, "No payment intent on session");
   }
 
-  const paymentRecord = await prisma.payment.findUnique({ where: { externalId: sessionId } });
+  const paymentRecord = await prisma.payment.findUnique({
+    where: { externalId: sessionId },
+  });
   if (!paymentRecord) throw new AppError(404, "Payment record not found");
 
   const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -264,7 +312,10 @@ const verifyAndProcessPayment = async (sessionId: string) => {
       appointmentId: paymentRecord.appointmentId,
       paymentIntentId,
     });
-  } else if (intent.status === "canceled" || intent.status === "requires_payment_method") {
+  } else if (
+    intent.status === "canceled" ||
+    intent.status === "requires_payment_method"
+  ) {
     await _onPaymentFailure({
       sessionId: paymentRecord.externalId,
       reason: "Payment intent failed or was cancelled",
@@ -279,18 +330,23 @@ const verifyAndProcessPayment = async (sessionId: string) => {
 };
 
 /** Creates a new Stripe checkout session for a previously failed appointment */
-const retryPayment = async (appointmentId: string) => {
-  const appointment = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+const retryPayment = async (payload: { appointmentId: string; successUrl: string; cancelUrl: string }) => {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: payload.appointmentId },
+  });
   if (!appointment) throw new AppError(404, "Appointment not found");
 
   const completed = await prisma.payment.findFirst({
-    where: { appointmentId, status: "COMPLETED" },
+    where: { appointmentId: payload.appointmentId, status: "COMPLETED" },
   });
-  if (completed) throw new AppError(400, "Payment already completed for this appointment");
+  if (completed)
+    throw new AppError(400, "Payment already completed for this appointment");
 
   return createCheckoutSession({
     amount: Number(appointment.price),
     currency: appointment.currency,
+    successUrl: payload.successUrl,
+    cancelUrl: payload.cancelUrl,
     metadata: {
       appointmentId: appointment.id,
       patientId: appointment.patientId,
@@ -320,10 +376,15 @@ const refundPayment = async (paymentId: string, paymentIntentId: string) => {
   });
   if (!payment) throw new AppError(404, "Payment record not found");
 
-  const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
+  const refund = await stripe.refunds.create({
+    payment_intent: paymentIntentId,
+  });
 
   await prisma.$transaction(async (tx) => {
-    await tx.payment.update({ where: { id: paymentId }, data: { status: "REFUNDED" } });
+    await tx.payment.update({
+      where: { id: paymentId },
+      data: { status: "REFUNDED" },
+    });
 
     await tx.doctorPayout.updateMany({
       where: { paymentId, status: "PENDING" },
@@ -387,10 +448,15 @@ const handleDoctorNoShow = async (appointmentId: string) => {
   });
 
   if (!appointment) throw new AppError(404, "Appointment not found");
-  if (appointment.endsAt > new Date()) throw new AppError(400, "Appointment slot has not ended yet");
-  if (appointment.status !== "CONFIRMED") throw new AppError(400, "Appointment is not CONFIRMED");
+  if (appointment.endsAt > new Date())
+    throw new AppError(400, "Appointment slot has not ended yet");
+  if (appointment.status !== "CONFIRMED")
+    throw new AppError(400, "Appointment is not CONFIRMED");
   if (appointment.consultation?.status === "COMPLETED") {
-    throw new AppError(400, "Consultation was already completed — no-show not applicable");
+    throw new AppError(
+      400,
+      "Consultation was already completed — no-show not applicable",
+    );
   }
 
   await prisma.$transaction(async (tx) => {
@@ -520,11 +586,11 @@ const getDoctorWallet = async (userId: string) => {
   );
 
   return {
-    balance: doctor.balance,              // available to withdraw right now
+    balance: doctor.balance, // available to withdraw right now
     totalEarned: totalEarned._sum.amount ?? 0,
     totalWithdrawn: totalWithdrawn._sum.amount ?? 0,
     upcomingEarnings: {
-      total: upcomingTotal,               // pending from active consultations
+      total: upcomingTotal, // pending from active consultations
       payouts: pendingPayouts,
     },
   };
@@ -551,7 +617,8 @@ const withdrawToCard = async ({
   cardLast4: string;
   cardHolderName: string;
 }) => {
-  if (amount <= 0) throw new AppError(400, "Withdrawal amount must be greater than zero");
+  if (amount <= 0)
+    throw new AppError(400, "Withdrawal amount must be greater than zero");
 
   const doctor = await prisma.doctor.findUnique({ where: { userId } });
   if (!doctor) throw new AppError(404, "Doctor profile not found");
@@ -563,7 +630,10 @@ const withdrawToCard = async ({
 
     const available = Number(fresh.balance);
     if (available < amount) {
-      throw new AppError(400, `Insufficient balance. Available: ${available.toFixed(2)}, Requested: ${amount.toFixed(2)}`);
+      throw new AppError(
+        400,
+        `Insufficient balance. Available: ${available.toFixed(2)}, Requested: ${amount.toFixed(2)}`,
+      );
     }
 
     // Deduct balance
@@ -639,13 +709,18 @@ const getTransactions = async (filters: ITransactionFilters) => {
       orderBy: { createdAt: "desc" },
       include: {
         user: { select: { name: true, email: true, role: true } },
-        withdrawal: { select: { cardBrand: true, cardLast4: true, cardHolderName: true } },
+        withdrawal: {
+          select: { cardBrand: true, cardLast4: true, cardHolderName: true },
+        },
       },
     }),
     prisma.transaction.count({ where }),
   ]);
 
-  return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  return {
+    data,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -676,7 +751,10 @@ const getWithdrawals = async (filters: IWithdrawalFilters) => {
     prisma.withdrawal.count({ where }),
   ]);
 
-  return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  return {
+    data,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -684,12 +762,13 @@ const getWithdrawals = async (filters: IWithdrawalFilters) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const getPayments = async (filters: IPaymentFilters) => {
-  const { page, limit, skip, sortBy, sortOrder } = paginationHelper.calculatePagination({
-    page: filters.page,
-    limit: filters.limit,
-    sortBy: filters.sortBy,
-    sortOrder: filters.sortOrder,
-  });
+  const { page, limit, skip, sortBy, sortOrder } =
+    paginationHelper.calculatePagination({
+      page: filters.page,
+      limit: filters.limit,
+      sortBy: filters.sortBy,
+      sortOrder: filters.sortOrder,
+    });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {};
@@ -719,14 +798,22 @@ const getPayments = async (filters: IPaymentFilters) => {
           },
         },
         payout: {
-          select: { status: true, amount: true, commissionAmount: true, doctorAmount: true },
+          select: {
+            status: true,
+            amount: true,
+            commissionAmount: true,
+            doctorAmount: true,
+          },
         },
       },
     }),
     prisma.payment.count({ where }),
   ]);
 
-  return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  return {
+    data,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -758,13 +845,23 @@ const getEscrowPayouts = async (filters: {
       include: {
         appointment: { select: { startsAt: true, endsAt: true } },
         doctor: { select: { user: { select: { name: true, email: true } } } },
-        payment: { select: { amount: true, currency: true, externalId: true, status: true } },
+        payment: {
+          select: {
+            amount: true,
+            currency: true,
+            externalId: true,
+            status: true,
+          },
+        },
       },
     }),
     prisma.doctorPayout.count({ where }),
   ]);
 
-  return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  return {
+    data,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

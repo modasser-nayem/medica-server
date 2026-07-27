@@ -91,6 +91,8 @@ const createAppointment = async (data: TCreateAppointment) => {
   const intent = await paymentService.createCheckoutSession({
     amount: feeAmount,
     currency: currency,
+    successUrl: data.successUrl,
+    cancelUrl: data.cancelUrl,
     metadata: {
       appointmentId: newApt.id,
       patientId: data.patientId,

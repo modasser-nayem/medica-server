@@ -18,6 +18,8 @@ const verifyPayment = z.object({
 const retryPayment = z.object({
   body: z.object({
     appointmentId: z.string({ required_error: "appointmentId is required" }).uuid(),
+    successUrl: z.string().min(1, "successUrl is required"),
+    cancelUrl: z.string().min(1, "cancelUrl is required"),
   }),
 });
 

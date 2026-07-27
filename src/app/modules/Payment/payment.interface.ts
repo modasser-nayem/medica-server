@@ -1,6 +1,8 @@
 export interface ICreatePaymentIntent {
   amount: number;
   currency: string;
+  successUrl: string;
+  cancelUrl: string;
   metadata: {
     appointmentId: string;
     patientId: string;
