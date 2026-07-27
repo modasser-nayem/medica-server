@@ -6,11 +6,93 @@ import {
   IGetAppointmentsFilters,
   TRescheduleAppointment,
   TCancelAppointment,
+  TRequestReschedule,
+  TRejectReschedule,
 } from "./appointment.interface";
 import { doctorService } from "../Doctor/doctor.service";
 import { addMinutes, format } from "date-fns";
 import { paginationHelper } from "../../../utils/pagination";
 import { paymentService } from "../Payment/payment.service";
+import { addDays } from "date-fns";
+
+const evaluateAndAutoUpdateExpiredAppointments = async () => {
+  const expiredAppointments = await prisma.appointment.findMany({
+    where: {
+      status: { in: ["PENDING", "CONFIRMED"] },
+      endsAt: { lt: new Date() },
+    },
+    include: {
+      patient: true,
+      doctor: true,
+      consultation: {
+        include: {
+          calls: true,
+          messages: true,
+        },
+      },
+    },
+  });
+
+  if (expiredAppointments.length === 0) return;
+
+  for (const appt of expiredAppointments) {
+    if (appt.status === "PENDING") {
+      await prisma.appointment.update({
+        where: { id: appt.id },
+        data: { status: "MISSED" },
+      });
+      continue;
+    }
+
+    let newStatus: Prisma.AppointmentUpdateInput["status"] = "MISSED";
+
+    if (appt.consultation) {
+      const hasSuccessfulCall = appt.consultation.calls.some(
+        (c) => c.status === "ANSWERED" || c.status === "ENDED"
+      );
+
+      if (hasSuccessfulCall) {
+        newStatus = "COMPLETED";
+      } else {
+        const validMessages = appt.consultation.messages.filter(
+          (m) =>
+            new Date(m.createdAt).getTime() >= new Date(appt.startsAt).getTime() &&
+            new Date(m.createdAt).getTime() <= new Date(appt.endsAt).getTime()
+        );
+
+        const hasDoctorMessaged = validMessages.some(
+          (m) => m.senderId === appt.doctor.userId
+        );
+        const hasPatientMessaged = validMessages.some(
+          (m) => m.senderId === appt.patient.userId
+        );
+
+        if (hasDoctorMessaged && hasPatientMessaged) {
+          newStatus = "COMPLETED";
+        } else if (hasDoctorMessaged) {
+          newStatus = "PATIENT_MISSED";
+        } else if (hasPatientMessaged) {
+          newStatus = "DOCTOR_MISSED";
+        } else {
+          newStatus = "MISSED";
+        }
+      }
+    }
+
+    await prisma.appointment.update({
+      where: { id: appt.id },
+      data: { status: newStatus },
+    });
+
+    if (appt.consultation) {
+      await prisma.consultation.update({
+        where: { id: appt.consultation.id },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: { status: newStatus as any },
+      });
+    }
+  }
+};
 
 const createAppointment = async (data: TCreateAppointment) => {
   const startsAt = new Date(data.startsAt);
@@ -154,6 +236,9 @@ const getAppointments = async ({
         },
       },
     },
+    rescheduleRequests: {
+      orderBy: { createdAt: "desc" },
+    },
   };
 
   if (userId) {
@@ -162,6 +247,9 @@ const getAppointments = async ({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (status && status.trim() !== "") where.status = status as any;
+
+  // Lazily update past pending or confirmed appointments
+  await evaluateAndAutoUpdateExpiredAppointments();
 
   const [data, total] = await Promise.all([
     prisma.appointment.findMany({
@@ -214,6 +302,9 @@ const getAppointments = async ({
 };
 
 const getAppointmentDetails = async (appointmentId: string) => {
+  // Lazily update first
+  await evaluateAndAutoUpdateExpiredAppointments();
+
   let appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
     include: {
@@ -255,11 +346,14 @@ const getAppointmentDetails = async (appointmentId: string) => {
         },
       },
       payments: true,
+      rescheduleRequests: {
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
   if (!appointment) {
-    throw new AppError(404, "Invalid appointment ID");
+    throw new AppError(404, "Appointment not found");
   }
 
   // Auto-create consultation if it is CONFIRMED and has no consultation record yet
@@ -313,6 +407,9 @@ const getAppointmentDetails = async (appointmentId: string) => {
           },
         },
         payments: true,
+        rescheduleRequests: {
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
   }
@@ -481,6 +578,188 @@ const deleteAppointment = async (appointmentId: string) => {
   return null;
 };
 
+const requestReschedule = async ({
+  appointmentId,
+  userRole,
+  data,
+}: {
+  appointmentId: string;
+  userRole: string;
+  data: TRequestReschedule;
+}) => {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+  });
+  if (!appointment) throw new AppError(404, "Appointment not found");
+  if (appointment.startsAt < new Date())
+    throw new AppError(400, "Cannot reschedule a past appointment");
+
+  const existingPending = await prisma.rescheduleRequest.findFirst({
+    where: { appointmentId, status: "PENDING" },
+  });
+  if (existingPending)
+    throw new AppError(400, "A reschedule request is already pending");
+
+  const suggestedTime = new Date(data.suggestedTime);
+  const slots = await doctorService.getDoctorAvailableSlots(
+    appointment.doctorId,
+    suggestedTime,
+    1,
+  );
+
+  const daySlots: string[] = slots[0]?.slots ?? [];
+  if (
+    !daySlots.includes(suggestedTime.toISOString()) &&
+    !daySlots.includes(
+      format(suggestedTime, "yyyy-MM-dd'T'HH:mm:ss.SSS") + "Z",
+    )
+  ) {
+    throw new AppError(400, "The suggested time slot is not available");
+  }
+
+  const request = await prisma.rescheduleRequest.create({
+    data: {
+      appointmentId,
+      requestedBy: userRole,
+      suggestedTime,
+      reason: data.reason,
+    },
+  });
+
+  return request;
+};
+
+const approveReschedule = async ({
+  appointmentId,
+  requestId,
+  userRole,
+}: {
+  appointmentId: string;
+  requestId: string;
+  userRole: string;
+}) => {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+  });
+  if (!appointment) throw new AppError(404, "Appointment not found");
+  if (appointment.startsAt < new Date())
+    throw new AppError(400, "Cannot reschedule a past appointment");
+
+  const request = await prisma.rescheduleRequest.findUnique({
+    where: { id: requestId },
+  });
+  if (!request) throw new AppError(404, "Request not found");
+  if (request.status !== "PENDING")
+    throw new AppError(400, "Request is not pending");
+  if (request.requestedBy === userRole)
+    throw new AppError(400, "You cannot approve your own request");
+
+  const suggestedTime = request.suggestedTime;
+  const slots = await doctorService.getDoctorAvailableSlots(
+    appointment.doctorId,
+    suggestedTime,
+    1,
+  );
+
+  const daySlots: string[] = slots[0]?.slots ?? [];
+  if (
+    !daySlots.includes(suggestedTime.toISOString()) &&
+    !daySlots.includes(
+      format(suggestedTime, "yyyy-MM-dd'T'HH:mm:ss.SSS") + "Z",
+    )
+  ) {
+    throw new AppError(
+      400,
+      "This slot has been booked by someone else in the meantime. Please reject this request and suggest a new time.",
+    );
+  }
+
+  const durationMs =
+    appointment.endsAt.getTime() - appointment.startsAt.getTime();
+  const endsAt = new Date(suggestedTime.getTime() + durationMs);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.rescheduleRequest.update({
+      where: { id: requestId },
+      data: { status: "APPROVED" },
+    });
+    await tx.appointment.update({
+      where: { id: appointmentId },
+      data: { startsAt: suggestedTime, endsAt },
+    });
+  });
+
+  return { message: "Reschedule approved and appointment updated" };
+};
+
+const rejectReschedule = async ({
+  appointmentId,
+  requestId,
+  userRole,
+  data,
+}: {
+  appointmentId: string;
+  requestId: string;
+  userRole: string;
+  data: TRejectReschedule;
+}) => {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+  });
+  if (!appointment) throw new AppError(404, "Appointment not found");
+  if (appointment.startsAt < new Date())
+    throw new AppError(400, "Cannot reschedule a past appointment");
+
+  const request = await prisma.rescheduleRequest.findUnique({
+    where: { id: requestId },
+  });
+  if (!request) throw new AppError(404, "Request not found");
+  if (request.status !== "PENDING")
+    throw new AppError(400, "Request is not pending");
+  if (request.requestedBy === userRole)
+    throw new AppError(400, "You cannot reject your own request");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.rescheduleRequest.update({
+      where: { id: requestId },
+      data: { status: "REJECTED", rejectReason: data.rejectReason },
+    });
+
+    if (data.newSuggestedTime) {
+      const suggestedTime = new Date(data.newSuggestedTime);
+      
+      const slots = await doctorService.getDoctorAvailableSlots(
+        appointment.doctorId,
+        suggestedTime,
+        1,
+      );
+
+      const daySlots: string[] = slots[0]?.slots ?? [];
+      if (
+        !daySlots.includes(suggestedTime.toISOString()) &&
+        !daySlots.includes(
+          format(suggestedTime, "yyyy-MM-dd'T'HH:mm:ss.SSS") + "Z",
+        )
+      ) {
+        throw new AppError(400, "The suggested counter time slot is not available");
+      }
+
+      await tx.rescheduleRequest.create({
+        data: {
+          appointmentId,
+          requestedBy: userRole,
+          suggestedTime,
+          reason:
+            data.rejectReason ||
+            "Suggested a new time after rejecting the previous one.",
+        },
+      });
+    }
+  });
+
+  return { message: "Reschedule rejected" };
+};
+
 export const appointmentService = {
   createAppointment,
   getAppointments,
@@ -488,4 +767,7 @@ export const appointmentService = {
   rescheduleAppointment,
   cancelAppointment,
   deleteAppointment,
+  requestReschedule,
+  approveReschedule,
+  rejectReschedule,
 };

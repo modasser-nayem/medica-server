@@ -178,6 +178,9 @@ enum AppointmentStatus {
   CONFIRMED
   CANCELLED
   COMPLETED
+  MISSED
+  PATIENT_MISSED
+  DOCTOR_MISSED
 }
 
 enum ConsultationStatus {
@@ -185,6 +188,9 @@ enum ConsultationStatus {
   IN_PROGRESS
   COMPLETED
   CANCELLED
+  MISSED
+  PATIENT_MISSED
+  DOCTOR_MISSED
 }
 
 model Appointment {
@@ -200,11 +206,12 @@ model Appointment {
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  doctor       Doctor        @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  consultation Consultation?
-  payments     Payment[]
-  payout       DoctorPayout?
+  patient            Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor             Doctor              @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  consultation       Consultation?
+  payments           Payment[]
+  payout             DoctorPayout?
+  rescheduleRequests RescheduleRequest[]
 
   @@unique([doctorId, startsAt])
   @@index([patientId, startsAt])
@@ -226,8 +233,32 @@ model Consultation {
   appointment   Appointment    @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   prescriptions Prescription[]
   calls         Call[]
+  messages      ChatMessage[]
 
   @@map("consultations")
+}
+
+enum RescheduleStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model RescheduleRequest {
+  id              String           @id @default(uuid())
+  appointmentId   String
+  requestedBy     String           // "PATIENT" or "DOCTOR"
+  suggestedTime   DateTime
+  reason          String?
+  rejectReason    String?
+  status          RescheduleStatus @default(PENDING)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  appointment     Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@map("reschedule_requests")
 }
 
 model Prescription {
@@ -409,6 +440,7 @@ model ChatMessage {
 
   thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   sender User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
 
   replyToId String?
   replyTo   ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)

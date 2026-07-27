@@ -15,6 +15,20 @@ export type TCancelAppointment = z.infer<
   typeof appointmentSchemaValidation.cancelAppointment
 >["body"];
 
+export type TRequestReschedule = {
+  suggestedTime: string;
+  reason?: string;
+};
+
+export type TRejectReschedule = {
+  rejectReason?: string;
+  newSuggestedTime?: string;
+};
+
+export type TApproveReschedule = {
+  newTime: string;
+};
+
 export interface IGetAppointmentsFilters extends PaginationQuery {
   status?: AppointmentStatus;
 }

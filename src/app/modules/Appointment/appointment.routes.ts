@@ -40,6 +40,29 @@ router.patch(
   appointmentController.cancelAppointment,
 );
 
+// Request a reschedule ping-pong
+router.post(
+  "/:id/reschedule-request",
+  authorize("PATIENT", "DOCTOR"),
+  requestValidate(appointmentSchemaValidation.requestReschedule),
+  appointmentController.requestReschedule,
+);
+
+// Approve a reschedule request
+router.post(
+  "/:id/reschedule-requests/:requestId/approve",
+  authorize("PATIENT", "DOCTOR"),
+  appointmentController.approveReschedule,
+);
+
+// Reject a reschedule request
+router.post(
+  "/:id/reschedule-requests/:requestId/reject",
+  authorize("PATIENT", "DOCTOR"),
+  requestValidate(appointmentSchemaValidation.rejectReschedule),
+  appointmentController.rejectReschedule,
+);
+
 // Delete appointment
 router.delete("/:id", authorize(), appointmentController.deleteAppointment);
 

@@ -34,8 +34,24 @@ const cancelAppointment = z.object({
   }),
 });
 
+const requestReschedule = z.object({
+  body: z.object({
+    suggestedTime: z.string().datetime(),
+    reason: z.string().optional(),
+  }),
+});
+
+const rejectReschedule = z.object({
+  body: z.object({
+    rejectReason: z.string().optional(),
+    newSuggestedTime: z.string().datetime().optional(),
+  }),
+});
+
 export const appointmentSchemaValidation = {
   createAppointment,
   rescheduleAppointment,
   cancelAppointment,
+  requestReschedule,
+  rejectReschedule,
 };
