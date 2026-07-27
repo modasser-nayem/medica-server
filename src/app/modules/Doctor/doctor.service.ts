@@ -6,6 +6,58 @@ import { paginationHelper } from "../../../utils/pagination";
 import { generateSlots } from "../../../utils/datetime";
 import { addDays } from "date-fns";
 
+// Get Top Rated Doctors (top 6)
+const getTopRatedDoctors = async () => {
+  const doctors = await prisma.doctor.findMany({
+    where: { user: { isActive: true, isDeleted: false } },
+    select: {
+      id: true,
+      specialties: true,
+      qualification: true,
+      experience: true,
+      consultationFee: true,
+      createdAt: true,
+      user: {
+        select: {
+          id: true,
+          name: true,
+          profileImage: true,
+        },
+      },
+      reviews: {
+        select: {
+          rating: true,
+        },
+      },
+      _count: {
+        select: {
+          reviews: true,
+        },
+      },
+    },
+  });
+
+  const enrichedDoctors = doctors.map((doctor) => {
+    const totalReviews = doctor._count.reviews || 0;
+    const totalRating = doctor.reviews.reduce((sum, r) => sum + r.rating, 0);
+    const averageRating = totalReviews > 0 ? totalRating / totalReviews : 0;
+    const { reviews, _count, ...rest } = doctor;
+    return {
+      ...rest,
+      totalReviews,
+      averageRating: Number(averageRating.toFixed(2)),
+    };
+  });
+
+  return enrichedDoctors
+    .sort((a, b) => {
+      const ratingDiff = b.averageRating - a.averageRating;
+      if (ratingDiff !== 0) return ratingDiff;
+      return b.totalReviews - a.totalReviews;
+    })
+    .slice(0, 6);
+};
+
 // Get Doctors
 const getDoctors = async (filters: TGetDoctorsFilter) => {
   const { page, limit, skip, sortBy, sortOrder } =
@@ -303,6 +355,7 @@ const getDoctorAvailableSlots = async (
 
 export const doctorService = {
   getDoctors,
+  getTopRatedDoctors,
   getDoctorDetails,
   getDoctorAvailableSlots,
 };

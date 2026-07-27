@@ -100,8 +100,12 @@ const getDoctorStats = async (userId: string): Promise<IDoctorStats> => {
   const upcomingAppointment = await prisma.appointment.findFirst({
     where: {
       doctorId: doctorId,
+      status: "CONFIRMED",
+      startsAt: {
+        gte: new Date(),
+      },
     },
-    orderBy: { startsAt: "desc" },
+    orderBy: { startsAt: "asc" },
     select: {
       id: true,
       startsAt: true,
@@ -151,8 +155,12 @@ const getPatientStats = async (userId: string): Promise<IPatientStats> => {
   const upcomingAppointment = await prisma.appointment.findFirst({
     where: {
       patientId,
+      status: "CONFIRMED",
+      startsAt: {
+        gte: new Date(),
+      },
     },
-    orderBy: { startsAt: "desc" },
+    orderBy: { startsAt: "asc" },
     select: {
       id: true,
       startsAt: true,

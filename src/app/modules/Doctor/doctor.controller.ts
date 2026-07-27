@@ -2,6 +2,18 @@ import { asyncHandler } from "../../../shared/catchAsync";
 import sendResponse from "../../../shared/sendResponse";
 import { doctorService } from "./doctor.service";
 
+// Get Top Rated Doctors
+const getTopRatedDoctors = asyncHandler(async (req, res) => {
+  const result = await doctorService.getTopRatedDoctors();
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Successfully retrieved top rated doctors",
+    data: result,
+  });
+});
+
 // Get Doctors
 const getDoctors = asyncHandler(async (req, res) => {
   const result = await doctorService.getDoctors(req.query);
@@ -42,4 +54,5 @@ export const doctorController = {
   getDoctors,
   getDoctorDetails,
   getDoctorSlots,
+  getTopRatedDoctors,
 };

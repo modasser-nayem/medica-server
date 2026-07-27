@@ -6,6 +6,8 @@ const createAppointment = z.object({
       patientId: z.string().uuid("Invalid patient ID"),
       doctorId: z.string().uuid("Invalid doctor ID"),
       startsAt: z.string().datetime(),
+      successUrl: z.string().min(1, "successUrl is required"),
+      cancelUrl: z.string().min(1, "cancelUrl is required"),
     })
     .refine((data) => new Date(data.startsAt).getTime() > Date.now(), {
       message: "Start time must be in the future (UTC)",
@@ -32,8 +34,24 @@ const cancelAppointment = z.object({
   }),
 });
 
+const requestReschedule = z.object({
+  body: z.object({
+    suggestedTime: z.string().datetime(),
+    reason: z.string().optional(),
+  }),
+});
+
+const rejectReschedule = z.object({
+  body: z.object({
+    rejectReason: z.string().optional(),
+    newSuggestedTime: z.string().datetime().optional(),
+  }),
+});
+
 export const appointmentSchemaValidation = {
   createAppointment,
   rescheduleAppointment,
   cancelAppointment,
+  requestReschedule,
+  rejectReschedule,
 };

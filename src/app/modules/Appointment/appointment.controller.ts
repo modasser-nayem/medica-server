@@ -79,6 +79,52 @@ const deleteAppointment = asyncHandler(async (req, res) => {
   });
 });
 
+const requestReschedule = asyncHandler(async (req, res) => {
+  const result = await appointmentService.requestReschedule({
+    appointmentId: req.params.id,
+    userRole: req.user.role!,
+    data: req.body,
+  });
+
+  sendResponse(res, {
+    statusCode: 201,
+    success: true,
+    message: "Reschedule request created successfully",
+    data: result,
+  });
+});
+
+const approveReschedule = asyncHandler(async (req, res) => {
+  const result = await appointmentService.approveReschedule({
+    appointmentId: req.params.id,
+    requestId: req.params.requestId,
+    userRole: req.user.role!,
+  });
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Reschedule request approved successfully",
+    data: result,
+  });
+});
+
+const rejectReschedule = asyncHandler(async (req, res) => {
+  const result = await appointmentService.rejectReschedule({
+    appointmentId: req.params.id,
+    requestId: req.params.requestId,
+    userRole: req.user.role!,
+    data: req.body,
+  });
+
+  sendResponse(res, {
+    statusCode: 200,
+    success: true,
+    message: "Reschedule request rejected successfully",
+    data: result,
+  });
+});
+
 export const appointmentController = {
   createAppointment,
   getAppointments,
@@ -86,4 +132,7 @@ export const appointmentController = {
   rescheduleAppointment,
   cancelAppointment,
   deleteAppointment,
+  requestReschedule,
+  approveReschedule,
+  rejectReschedule,
 };

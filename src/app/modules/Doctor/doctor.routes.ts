@@ -3,6 +3,9 @@ import { doctorController } from "./doctor.controller";
 
 const router = express.Router();
 
+// Get Top Rated Doctors
+router.get("/top-rated", doctorController.getTopRatedDoctors);
+
 // Get Doctors
 router.get("/", doctorController.getDoctors);
 
